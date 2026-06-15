@@ -29,6 +29,9 @@ export interface Enemy {
   pathSide: -1 | 1;
   pathNormalX: number;
   pathNormalZ: number;
+  navTarget: THREE.Vector3;
+  navTargetTimer: number;
+  stuckTimer: number;
   rampRouteTimer: number;
   rampRouteIndex: number;
   rampRouteDirection: -1 | 0 | 1;

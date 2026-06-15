@@ -376,9 +376,14 @@ type EnemyRampRoute = {
   plateauIndex: number;
 };
 
+type TerrainNavPoint = {
+  position: THREE.Vector3;
+};
+
 buildTerrainWallGrid(terrainLedgeWalls, terrainLedgeWallGrid);
 buildTerrainWallGrid(terrainRampSideWalls, terrainRampSideWallGrid);
 const terrainRampRoutes = createTerrainRampRoutes();
+const terrainGroundNavPoints = createTerrainGroundNavPoints();
 
 function createTerrainRampRoutes() {
   const routes: EnemyRampRoute[] = [];
@@ -423,6 +428,42 @@ function getTerrainPlateauIndexAt(x: number, z: number, height: number) {
 function isPointInsideTerrainPlateau(stamp: Extract<TerrainHeightStamp, { kind: "plateau" }>, x: number, z: number) {
   const local = terrainWorldToLocal(stamp.x, stamp.z, stamp.rotation, x, z);
   return Math.abs(local.x) <= stamp.width * 0.5 * 0.9 && Math.abs(local.z) <= stamp.depth * 0.5 * 0.86;
+}
+
+function createTerrainGroundNavPoints() {
+  const points: TerrainNavPoint[] = [];
+  const coordinates = [-58, -38, -19, 0, 19, 38, 58];
+
+  for (const x of coordinates) {
+    for (const z of coordinates) {
+      addTerrainGroundNavPoint(points, x, z);
+    }
+  }
+
+  for (const route of terrainRampRoutes) {
+    addTerrainGroundNavPoint(points, route.lowApproach.x, route.lowApproach.z);
+    addTerrainGroundNavPoint(points, route.low.x, route.low.z);
+  }
+
+  return points;
+}
+
+function addTerrainGroundNavPoint(points: TerrainNavPoint[], x: number, z: number) {
+  if (!isTerrainGroundNavPointClear(x, z)) return;
+  for (const point of points) {
+    if (Math.hypot(point.position.x - x, point.position.z - z) < 2.8) return;
+  }
+  points.push({ position: new THREE.Vector3(x, 0, z) });
+}
+
+function isTerrainGroundNavPointClear(x: number, z: number) {
+  if (sampleTerrainHeight(x, z) > 0.5) return false;
+  for (const blocker of terrainBlockerStamps) {
+    if (Math.hypot(x - blocker.x, z - blocker.z) < blocker.radius + 2.1) {
+      return false;
+    }
+  }
+  return true;
 }
 
 const enemyMaterial = new THREE.MeshStandardMaterial({
@@ -2565,6 +2606,8 @@ function updateEnemies(delta: number) {
       enemy.velocity.lerp(tmpVecB, 1 - Math.pow(0.03, delta));
     }
     steerEnemyAroundTerrainBlockers(enemy);
+    const previousEnemyX = enemy.mesh.position.x;
+    const previousEnemyZ = enemy.mesh.position.z;
     enemy.mesh.position.addScaledVector(enemy.velocity, delta);
     enemy.mesh.position.x = THREE.MathUtils.clamp(enemy.mesh.position.x, -72, 72);
     enemy.mesh.position.z = THREE.MathUtils.clamp(enemy.mesh.position.z, -72, 72);
@@ -2577,6 +2620,7 @@ function updateEnemies(delta: number) {
       enemyActorHeight,
       enemyActorHeight,
     );
+    updateEnemyStuckRecovery(enemy, pathDirection, delta, previousEnemyX, previousEnemyZ);
     updateEnemyPathMemory(enemy, chaseDirection, enemyTerrainCollisionInfo);
     enemy.mesh.position.x = THREE.MathUtils.clamp(enemy.mesh.position.x, -72, 72);
     enemy.mesh.position.z = THREE.MathUtils.clamp(enemy.mesh.position.z, -72, 72);
@@ -2616,11 +2660,13 @@ function getEnemyChaseDirection(enemy: Enemy, directDirection: THREE.Vector3, de
   const playerGroundHeight = sampleTerrainHeight(player.group.position.x, player.group.position.z);
   const heightDelta = playerGroundHeight - enemyGroundHeight;
   enemy.rampRouteTimer = Math.max(0, enemy.rampRouteTimer - delta);
+  enemy.navTargetTimer = Math.max(0, enemy.navTargetTimer - delta);
 
   if (enemy.rampRouteTimer > 0 && enemy.rampRouteIndex >= 0) {
     const route = terrainRampRoutes[enemy.rampRouteIndex];
     if (route) {
-      const target = getEnemyRampRouteTarget(enemy, route, enemy.rampRouteDirection, enemyGroundHeight);
+      const rawTarget = getEnemyRampRouteTarget(enemy, route, enemy.rampRouteDirection, enemyGroundHeight);
+      const target = getEnemyRouteNavigationTarget(enemy, route, rawTarget, enemyGroundHeight);
       if (target && !hasEnemyClearedRampRoute(enemy, route, enemy.rampRouteDirection, enemyGroundHeight)) {
         enemy.rampRouteTimer = Math.max(enemy.rampRouteTimer, 0.35);
         return directionToEnemyTarget(enemy, target, directDirection);
@@ -2634,6 +2680,10 @@ function getEnemyChaseDirection(enemy: Enemy, directDirection: THREE.Vector3, de
   const playerRegion = getTerrainNavRegion(player.group.position, playerGroundHeight);
   if (enemyRegion === playerRegion) {
     enemy.rampRouteDirection = 0;
+    if (enemyRegion < 0) {
+      const target = getEnemyGroundNavigationTarget(enemy, player.group.position, enemyGroundHeight);
+      if (target) return directionToEnemyTarget(enemy, target, directDirection);
+    }
     return tmpVecD.copy(directDirection);
   }
 
@@ -2654,7 +2704,8 @@ function getEnemyChaseDirection(enemy: Enemy, directDirection: THREE.Vector3, de
   enemy.rampRouteTimer = 7.2;
   enemy.pathTimer = 0;
 
-  const target = getEnemyRampRouteTarget(enemy, route, direction, enemyGroundHeight);
+  const rawTarget = getEnemyRampRouteTarget(enemy, route, direction, enemyGroundHeight);
+  const target = getEnemyRouteNavigationTarget(enemy, route, rawTarget, enemyGroundHeight);
   return directionToEnemyTarget(enemy, target, directDirection);
 }
 
@@ -2675,6 +2726,25 @@ function getEnemyNavRoutePlan(
   }
 
   return undefined;
+}
+
+function getEnemyRouteNavigationTarget(
+  enemy: Enemy,
+  route: EnemyRampRoute,
+  target: THREE.Vector3 | undefined,
+  enemyGroundHeight: number,
+) {
+  if (!target) return undefined;
+
+  const targetIsLowSide =
+    target === route.lowApproach ||
+    target === route.low ||
+    sampleTerrainHeight(target.x, target.z) < 0.7;
+  if (enemyGroundHeight < 0.7 && targetIsLowSide) {
+    return getEnemyGroundNavigationTarget(enemy, target, enemyGroundHeight) ?? target;
+  }
+
+  return target;
 }
 
 function getEnemyRampRouteTarget(
@@ -2719,6 +2789,77 @@ function directionToEnemyTarget(enemy: Enemy, target: THREE.Vector3 | undefined,
     return tmpVecD.copy(fallback);
   }
   return tmpVecD.normalize();
+}
+
+function getEnemyGroundNavigationTarget(enemy: Enemy, target: THREE.Vector3, enemyGroundHeight: number) {
+  if (enemyGroundHeight > 0.7 || terrainGroundNavPoints.length === 0) return undefined;
+
+  const radius = enemy.radius + 0.64;
+  if (!isTerrainPathBlocked(enemy.mesh.position, target, radius)) {
+    enemy.navTargetTimer = 0;
+    return undefined;
+  }
+
+  if (
+    enemy.navTargetTimer > 0 &&
+    horizontalDistance(enemy.mesh.position, enemy.navTarget) > 1.6 &&
+    !isTerrainPathBlocked(enemy.mesh.position, enemy.navTarget, radius)
+  ) {
+    return enemy.navTarget;
+  }
+
+  const waypoint = getBestEnemyGroundWaypoint(enemy.mesh.position, target, radius);
+  if (!waypoint) return undefined;
+
+  enemy.navTarget.copy(waypoint);
+  enemy.navTargetTimer = 0.75;
+  return enemy.navTarget;
+}
+
+function getBestEnemyGroundWaypoint(from: THREE.Vector3, target: THREE.Vector3, radius: number) {
+  let bestPoint: THREE.Vector3 | undefined;
+  let bestScore = Infinity;
+
+  for (const point of terrainGroundNavPoints) {
+    if (isTerrainPathBlocked(from, point.position, radius)) continue;
+
+    const targetBlocked = isTerrainPathBlocked(point.position, target, radius);
+    const score =
+      horizontalDistance(from, point.position) +
+      horizontalDistance(point.position, target) * (targetBlocked ? 1.55 : 0.82) +
+      (targetBlocked ? 18 : 0);
+    if (score < bestScore) {
+      bestScore = score;
+      bestPoint = point.position;
+    }
+  }
+
+  return bestPoint;
+}
+
+function isTerrainPathBlocked(from: THREE.Vector3, to: THREE.Vector3, radius: number) {
+  if (!settings.terrainEnabled) return false;
+
+  for (const blocker of terrainBlockers) {
+    if (distancePointToSegment2D(blocker.x, blocker.z, from.x, from.z, to.x, to.z) <= blocker.collisionRadius + radius) {
+      return true;
+    }
+  }
+
+  const wallRadius = radius + terrainLedgeThickness + 0.2;
+  for (const wall of terrainLedgeWalls) {
+    if (distanceSegmentToSegment2D(from.x, from.z, to.x, to.z, wall.x1, wall.z1, wall.x2, wall.z2) <= wallRadius) {
+      return true;
+    }
+  }
+
+  for (const wall of terrainRampSideWalls) {
+    if (distanceSegmentToSegment2D(from.x, from.z, to.x, to.z, wall.x1, wall.z1, wall.x2, wall.z2) <= wallRadius) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 function isEnemyFollowingRampRoute(enemy: Enemy) {
@@ -2821,6 +2962,36 @@ function getEnemyPathDirection(enemy: Enemy, directDirection: THREE.Vector3, del
     return tmpVecC.copy(directDirection);
   }
   return tmpVecC.normalize();
+}
+
+function updateEnemyStuckRecovery(
+  enemy: Enemy,
+  pathDirection: THREE.Vector3,
+  delta: number,
+  previousX: number,
+  previousZ: number,
+) {
+  const wantedMovement = pathDirection.lengthSq() > 0.35 && enemy.velocity.lengthSq() > 0.35;
+  const moved = Math.hypot(enemy.mesh.position.x - previousX, enemy.mesh.position.z - previousZ);
+  const expectedMove = enemy.speed * delta * 0.18;
+  const farFromPlayer = horizontalDistance(enemy.mesh.position, player.group.position) > enemy.radius + player.radius + 2.2;
+
+  if (wantedMovement && farFromPlayer && moved < expectedMove) {
+    enemy.stuckTimer += delta;
+  } else {
+    enemy.stuckTimer = Math.max(0, enemy.stuckTimer - delta * 1.8);
+  }
+
+  if (enemy.stuckTimer < 0.62) return;
+
+  enemy.navTargetTimer = 0;
+  enemy.pathTimer = 0;
+  enemy.pathSide = enemy.pathSide === 1 ? -1 : 1;
+  if (isEnemyFollowingRampRoute(enemy)) {
+    enemy.rampRouteTimer = Math.min(enemy.rampRouteTimer, 0.12);
+  }
+  enemy.velocity.multiplyScalar(0.35);
+  enemy.stuckTimer = 0;
 }
 
 function updateEnemyPathMemory(
@@ -3338,6 +3509,9 @@ function spawnEnemy(kind: EnemyKind) {
     pathSide: Math.random() < 0.5 ? -1 : 1,
     pathNormalX: 0,
     pathNormalZ: 0,
+    navTarget: new THREE.Vector3(),
+    navTargetTimer: 0,
+    stuckTimer: 0,
     rampRouteTimer: 0,
     rampRouteIndex: -1,
     rampRouteDirection: 0,
@@ -4764,6 +4938,63 @@ function horizontalDistance(a: THREE.Vector3, b: THREE.Vector3) {
   const dx = a.x - b.x;
   const dz = a.z - b.z;
   return Math.hypot(dx, dz);
+}
+
+function distancePointToSegment2D(
+  px: number,
+  pz: number,
+  ax: number,
+  az: number,
+  bx: number,
+  bz: number,
+) {
+  const abX = bx - ax;
+  const abZ = bz - az;
+  const lengthSq = abX * abX + abZ * abZ;
+  if (lengthSq <= 0.0001) return Math.hypot(px - ax, pz - az);
+
+  const t = THREE.MathUtils.clamp(((px - ax) * abX + (pz - az) * abZ) / lengthSq, 0, 1);
+  return Math.hypot(px - (ax + abX * t), pz - (az + abZ * t));
+}
+
+function distanceSegmentToSegment2D(
+  ax: number,
+  az: number,
+  bx: number,
+  bz: number,
+  cx: number,
+  cz: number,
+  dx: number,
+  dz: number,
+) {
+  if (segmentsIntersect2D(ax, az, bx, bz, cx, cz, dx, dz)) return 0;
+  return Math.min(
+    distancePointToSegment2D(ax, az, cx, cz, dx, dz),
+    distancePointToSegment2D(bx, bz, cx, cz, dx, dz),
+    distancePointToSegment2D(cx, cz, ax, az, bx, bz),
+    distancePointToSegment2D(dx, dz, ax, az, bx, bz),
+  );
+}
+
+function segmentsIntersect2D(
+  ax: number,
+  az: number,
+  bx: number,
+  bz: number,
+  cx: number,
+  cz: number,
+  dx: number,
+  dz: number,
+) {
+  const o1 = orientation2D(ax, az, bx, bz, cx, cz);
+  const o2 = orientation2D(ax, az, bx, bz, dx, dz);
+  const o3 = orientation2D(cx, cz, dx, dz, ax, az);
+  const o4 = orientation2D(cx, cz, dx, dz, bx, bz);
+  return o1 * o2 < 0 && o3 * o4 < 0;
+}
+
+function orientation2D(ax: number, az: number, bx: number, bz: number, cx: number, cz: number) {
+  return (bx - ax) * (cz - az) - (bz - az) * (cx - ax);
 }
 
 function formatTime(seconds: number) {
