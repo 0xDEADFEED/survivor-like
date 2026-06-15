@@ -278,6 +278,7 @@ const tmpVecC = new THREE.Vector3();
 const tmpVecD = new THREE.Vector3();
 const cameraPlanarOffset = new THREE.Vector3(0, 0, 19);
 const cameraLookAhead = new THREE.Vector3();
+const cameraMovementBias = new THREE.Vector3();
 const cameraDesiredOffset = new THREE.Vector3();
 const cameraDesiredPosition = new THREE.Vector3();
 let cameraYaw = 0;
@@ -1810,7 +1811,7 @@ function loop(now: number) {
     updatePausedMotion(delta);
   }
 
-  updateCamera();
+  updateCamera(delta);
   updatePlayerDamageFlash(rawDelta);
   updateTerrainDebug();
   updateCombatOverlays(rawDelta);
@@ -4108,7 +4109,7 @@ function updateWeaponVisuals() {
   }
 }
 
-function updateCamera() {
+function updateCamera(delta: number) {
   const groundHeight = sampleTerrainHeight(player.group.position.x, player.group.position.z);
   const air = THREE.MathUtils.clamp(player.verticalOffset / 2.2, 0, 1);
   const terrainLift = THREE.MathUtils.clamp(groundHeight * 0.28, 0, 0.85);
@@ -4121,14 +4122,21 @@ function updateCamera() {
   const cameraBackZ = Math.cos(cameraYaw);
   const cameraDistance = THREE.MathUtils.mapLinear(cameraPitch, 0.38, 0.78, 15.5, 23.5);
   const cameraHeight = Math.tan(cameraPitch) * cameraDistance;
+  cameraMovementBias.lerp(
+    tmpVecB.set(-moveX * 2.2, 0, -moveZ * 2.2),
+    1 - Math.pow(0.035, delta),
+  );
 
   cameraDesiredOffset.set(
-    cameraBackX * (cameraDistance + speedT * 0.8) - moveX * 2.2,
+    cameraBackX * (cameraDistance + speedT * 0.8) + cameraMovementBias.x,
     0,
-    cameraBackZ * (cameraDistance + speedT * 0.8) - moveZ * 2.2,
+    cameraBackZ * (cameraDistance + speedT * 0.8) + cameraMovementBias.z,
   );
   cameraPlanarOffset.copy(cameraDesiredOffset);
-  cameraLookAhead.copy(tmpVecB.set(moveX * 4.8 * speedT, 0, moveZ * 4.8 * speedT));
+  cameraLookAhead.lerp(
+    tmpVecB.set(moveX * 4.8 * speedT, 0, moveZ * 4.8 * speedT),
+    1 - Math.pow(0.045, delta),
+  );
 
   cameraDesiredPosition.set(
     player.group.position.x + cameraPlanarOffset.x,
