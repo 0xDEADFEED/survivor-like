@@ -2588,6 +2588,7 @@ function getEnemyChaseDirection(enemy: Enemy, directDirection: THREE.Vector3, de
     if (route) {
       const target = getEnemyRampRouteTarget(enemy, route, enemy.rampRouteDirection, enemyGroundHeight);
       if (target && !hasEnemyClearedRampRoute(enemy, route, enemy.rampRouteDirection, enemyGroundHeight, heightDelta)) {
+        enemy.rampRouteTimer = Math.max(enemy.rampRouteTimer, 0.35);
         return directionToEnemyTarget(enemy, target, directDirection);
       }
     }
@@ -2608,7 +2609,7 @@ function getEnemyChaseDirection(enemy: Enemy, directDirection: THREE.Vector3, de
 
   enemy.rampRouteIndex = terrainRampRoutes.indexOf(route);
   enemy.rampRouteDirection = heightDelta > 0 ? 1 : -1;
-  enemy.rampRouteTimer = 2.4;
+  enemy.rampRouteTimer = 7.2;
   enemy.pathTimer = 0;
 
   const target = getEnemyRampRouteTarget(enemy, route, enemy.rampRouteDirection, enemyGroundHeight);
@@ -2918,6 +2919,8 @@ function steerEnemyAroundTerrainBlockers(enemy: Enemy) {
   const lookAhead = THREE.MathUtils.clamp(speed * 0.35, 1.7, 4.8);
   const nextX = enemy.mesh.position.x + directionX * lookAhead;
   const nextZ = enemy.mesh.position.z + directionZ * lookAhead;
+
+  if (isEnemyFollowingRampRoute(enemy)) return;
 
   for (const blocker of terrainBlockers) {
     const toBlockerX = blocker.x - enemy.mesh.position.x;
