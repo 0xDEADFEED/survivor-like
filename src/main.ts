@@ -143,7 +143,6 @@ let terrainNormalArrow: THREE.ArrowHelper | undefined;
 let playerCollisionMarker: THREE.Mesh | undefined;
 let playerGroundShadow: THREE.Mesh | undefined;
 const clock = new THREE.Clock();
-const mouseWorld = new THREE.Vector3(0, 0, 1);
 const cameraLookTarget = new THREE.Vector3(0, 0.45, 0);
 const settings = loadSettings();
 const metaProgression = loadMetaProgression();
@@ -281,6 +280,10 @@ const cameraPlanarOffset = new THREE.Vector3(0, 0, 19);
 const cameraLookAhead = new THREE.Vector3();
 const cameraDesiredOffset = new THREE.Vector3();
 const cameraDesiredPosition = new THREE.Vector3();
+let cameraYaw = 0;
+let cameraPitch = 0.55;
+const cameraMouseYawSensitivity = 0.0032;
+const cameraMousePitchSensitivity = 0.0022;
 const playerTerrainCollisionInfo: TerrainCollisionInfo = {
   hit: false,
   ledge: false,
@@ -312,9 +315,6 @@ const screenProjection = {
   y: 0,
   visible: false,
 };
-const raycaster = new THREE.Raycaster();
-const pointer = new THREE.Vector2();
-const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
 const terrainBlockerCollisionScale = 0.78;
 const terrainBlockerFootprintScale = 1.08;
 const playerJumpSpeed = 7.4;
@@ -1742,9 +1742,14 @@ function bindEvents() {
   });
 
   window.addEventListener("pointermove", (event) => {
-    pointer.x = (event.clientX / window.innerWidth) * 2 - 1;
-    pointer.y = -(event.clientY / window.innerHeight) * 2 + 1;
-    updateMouseWorldFromPointer();
+    if (gameMode === "running") {
+      cameraYaw -= event.movementX * cameraMouseYawSensitivity;
+      cameraPitch = THREE.MathUtils.clamp(
+        cameraPitch + event.movementY * cameraMousePitchSensitivity,
+        0.38,
+        0.78,
+      );
+    }
   });
 
   window.addEventListener("resize", () => {
@@ -1838,7 +1843,17 @@ function updatePlayer(delta: number) {
   if (keys.has("d") || keys.has("arrowright")) input.x += 1;
 
   if (input.lengthSq() > 0) {
-    input.normalize();
+    const inputRight = input.x;
+    const inputForward = -input.z;
+    const cameraRightX = Math.cos(cameraYaw);
+    const cameraRightZ = -Math.sin(cameraYaw);
+    const cameraForwardX = -Math.sin(cameraYaw);
+    const cameraForwardZ = -Math.cos(cameraYaw);
+    input.set(
+      cameraRightX * inputRight + cameraForwardX * inputForward,
+      0,
+      cameraRightZ * inputRight + cameraForwardZ * inputForward,
+    ).normalize();
     const carryBoost = player.grounded ? 1 + (player.landingCarryTimer / playerLandingCarrySeconds) * 0.12 : 1;
     const speed = player.speed * getTerrainMoveSpeedMultiplier(input.x, input.z) * carryBoost;
     const desiredVelocity = tmpVecB.copy(input).multiplyScalar(player.grounded ? speed : speed * playerAirControl);
@@ -1897,8 +1912,9 @@ function updatePlayer(delta: number) {
   updatePlayerSquash(delta);
   updatePlayerGroundShadow();
 
-  const faceDirection = tmpVecB.subVectors(mouseWorld, player.group.position);
-  faceDirection.y = 0;
+  const faceDirection = player.velocity.lengthSq() > 0.08
+    ? tmpVecB.copy(player.velocity)
+    : tmpVecB.set(-Math.sin(cameraYaw), 0, -Math.cos(cameraYaw));
   if (faceDirection.lengthSq() > 0.001) {
     player.group.rotation.y = Math.atan2(faceDirection.x, faceDirection.z);
   }
@@ -2042,20 +2058,6 @@ function triggerLandingBonk() {
     cameraShake = Math.max(cameraShake, 0.2);
   }
   spawnLandingBonkEffect(player.group.position, hitCount > 0 ? playerLandingBonkRadius : playerLandingBonkRadius * 0.82, hitCount > 0);
-}
-
-function updateMouseWorldFromPointer() {
-  raycaster.setFromCamera(pointer, camera);
-  if (terrainMesh) {
-    const hit = raycaster.intersectObject(terrainMesh, false)[0];
-    if (hit) {
-      mouseWorld.copy(hit.point);
-      return;
-    }
-  }
-
-  groundPlane.constant = -player.group.position.y;
-  raycaster.ray.intersectPlane(groundPlane, mouseWorld);
 }
 
 function updateMaces(delta: number) {
@@ -4086,11 +4088,15 @@ function updateCamera(delta: number) {
   const moveX = moving ? player.velocity.x / speed : 0;
   const moveZ = moving ? player.velocity.z / speed : 0;
   const speedT = THREE.MathUtils.clamp(speed / Math.max(player.speed, 0.001), 0, 1.25);
+  const cameraBackX = Math.sin(cameraYaw);
+  const cameraBackZ = Math.cos(cameraYaw);
+  const cameraDistance = THREE.MathUtils.mapLinear(cameraPitch, 0.38, 0.78, 15.5, 23.5);
+  const cameraHeight = Math.tan(cameraPitch) * cameraDistance;
 
   cameraDesiredOffset.set(
-    -moveX * 4.6,
+    cameraBackX * (cameraDistance + speedT * 0.8) - moveX * 2.2,
     0,
-    18.6 - moveZ * 4.4 + speedT * 0.9,
+    cameraBackZ * (cameraDistance + speedT * 0.8) - moveZ * 2.2,
   );
   cameraPlanarOffset.lerp(cameraDesiredOffset, 1 - Math.pow(0.018, delta));
   cameraLookAhead.lerp(
@@ -4100,7 +4106,7 @@ function updateCamera(delta: number) {
 
   cameraDesiredPosition.set(
     player.group.position.x + cameraPlanarOffset.x,
-    groundHeight + 11.4 + terrainLift + air * 1.35 + speedT * 0.35,
+    groundHeight + cameraHeight + terrainLift + air * 1.35 + speedT * 0.35,
     player.group.position.z + cameraPlanarOffset.z + air * 0.8,
   );
   camera.position.lerp(cameraDesiredPosition, 1 - Math.pow(0.012, delta));
