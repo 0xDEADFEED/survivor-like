@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SurvivorLike</title>
+  </head>
+  <body>
+    <div id="app">
+      <canvas id="game"></canvas>
+      <div id="combat-layer" aria-hidden="true">
+        <div id="toast" class="toast hidden"></div>
+        <div id="boss-bar" class="boss-bar hidden">
+          <span id="boss-name">Mini-Boss</span>
+          <div class="boss-track"><b id="boss-fill"></b></div>
+        </div>
+      </div>
+      <section id="hud" aria-label="Run stats">
+        <div class="hud-row top">
+          <div class="stat">
+            <span class="stat-label">Time</span>
+            <strong id="time">00:00</strong>
+          </div>
+          <div class="stat">
+            <span class="stat-label">Kills</span>
+            <strong id="kills">0</strong>
+          </div>
+          <div class="stat">
+            <span class="stat-label">Level</span>
+            <strong id="level">1</strong>
+          </div>
+        </div>
+        <div class="bars">
+          <div class="bar health" aria-label="Health">
+            <span id="health-fill"></span>
+          </div>
+          <div class="bar xp" aria-label="Experience">
+            <span id="xp-fill"></span>
+          </div>
+        </div>
+      </section>
+      <section id="start" class="overlay" aria-label="Start run">
+        <div class="modal start-modal">
+          <p class="eyebrow">Greybox Build</p>
+          <h1>SurvivorLike</h1>
+          <div id="best-run" class="best-run"></div>
+          <div id="character-select" class="character-select"></div>
+          <div id="meta-shop" class="meta-shop"></div>
+          <button id="start-button" type="button">Start Run</button>
+        </div>
+      </section>
+      <section id="level-up" class="overlay hidden" aria-label="Choose upgrade">
+        <div class="modal">
+          <p class="eyebrow">Level Up</p>
+          <h1 id="level-up-title">Pick a power</h1>
+          <div id="upgrade-cards" class="upgrade-grid"></div>
+          <div class="level-actions">
+            <button id="reroll-button" type="button">Reroll</button>
+            <button id="skip-button" type="button">Skip</button>
+          </div>
+        </div>
+      </section>
+      <section id="pause" class="overlay hidden" aria-label="Paused">
+        <div class="modal pause-modal">
+          <p class="eyebrow">Paused</p>
+          <h1>Current Build</h1>
+          <div id="pause-stats" class="codex-grid"></div>
+          <div id="pause-upgrades" class="codex-list"></div>
+          <div id="settings-panel" class="settings-panel" aria-label="Settings">
+            <label><input id="sound-toggle" type="checkbox" /> Sound</label>
+            <label><input id="shake-toggle" type="checkbox" /> Screen shake</label>
+            <label><input id="damage-toggle" type="checkbox" /> Damage numbers</label>
+            <label><input id="particles-toggle" type="checkbox" /> Reduce particles</label>
+            <label><input id="terrain-toggle" type="checkbox" /> Terrain test</label>
+            <label><input id="terrain-debug-toggle" type="checkbox" /> Terrain debug</label>
+          </div>
+          <div class="pause-actions">
+            <button id="resume-button" type="button">Resume</button>
+            <button id="pause-restart-button" type="button">Restart</button>
+            <button id="return-start-button" type="button">Start Screen</button>
+          </div>
+        </div>
+      </section>
+      <section id="death" class="overlay hidden" aria-label="Run ended">
+        <div class="modal">
+          <p class="eyebrow">Run Over</p>
+          <h1>You got bonked</h1>
+          <p id="death-stats" class="death-stats"></p>
+          <p id="best-run-note" class="death-stats"></p>
+          <button id="restart-button" type="button">Restart</button>
+        </div>
+      </section>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

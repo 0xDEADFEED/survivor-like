@@ -1,0 +1,21 @@
+{
+  "name": "survivor-like",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "tsc && vite build",
+    "preview": "vite preview --host 127.0.0.1",
+    "verify:terrain": "tsc -p tsconfig.verify.json && node .terrain-check/scripts/verify-terrain.js"
+  },
+  "dependencies": {
+    "three": "^0.177.0"
+  },
+  "devDependencies": {
+    "@types/three": "^0.177.0",
+    "playwright": "^1.60.0",
+    "typescript": "^5.8.3",
+    "vite": "^6.4.3"
+  }
+}
