@@ -1743,9 +1743,12 @@ function bindEvents() {
 
   window.addEventListener("pointermove", (event) => {
     if (gameMode === "running") {
+      const absMovementX = Math.abs(event.movementX);
+      const absMovementY = Math.abs(event.movementY);
+      const pitchMovement = absMovementX > absMovementY * 3 && absMovementY <= 2 ? 0 : event.movementY;
       cameraYaw -= event.movementX * cameraMouseYawSensitivity;
       cameraPitch = THREE.MathUtils.clamp(
-        cameraPitch + event.movementY * cameraMousePitchSensitivity,
+        cameraPitch + pitchMovement * cameraMousePitchSensitivity,
         0.38,
         0.78,
       );
@@ -1807,7 +1810,7 @@ function loop(now: number) {
     updatePausedMotion(delta);
   }
 
-  updateCamera(delta);
+  updateCamera();
   updatePlayerDamageFlash(rawDelta);
   updateTerrainDebug();
   updateCombatOverlays(rawDelta);
@@ -4105,7 +4108,7 @@ function updateWeaponVisuals() {
   }
 }
 
-function updateCamera(delta: number) {
+function updateCamera() {
   const groundHeight = sampleTerrainHeight(player.group.position.x, player.group.position.z);
   const air = THREE.MathUtils.clamp(player.verticalOffset / 2.2, 0, 1);
   const terrainLift = THREE.MathUtils.clamp(groundHeight * 0.28, 0, 0.85);
@@ -4125,17 +4128,14 @@ function updateCamera(delta: number) {
     cameraBackZ * (cameraDistance + speedT * 0.8) - moveZ * 2.2,
   );
   cameraPlanarOffset.copy(cameraDesiredOffset);
-  cameraLookAhead.lerp(
-    tmpVecB.set(moveX * 4.8 * speedT, 0, moveZ * 4.8 * speedT),
-    1 - Math.pow(0.055, delta),
-  );
+  cameraLookAhead.copy(tmpVecB.set(moveX * 4.8 * speedT, 0, moveZ * 4.8 * speedT));
 
   cameraDesiredPosition.set(
     player.group.position.x + cameraPlanarOffset.x,
     groundHeight + cameraHeight + terrainLift + air * 1.35 + speedT * 0.35,
     player.group.position.z + cameraPlanarOffset.z + air * 0.8,
   );
-  camera.position.lerp(cameraDesiredPosition, 1 - Math.pow(0.045, delta));
+  camera.position.copy(cameraDesiredPosition);
 
   const shake = settings.screenShake && cameraShake > 0 ? cameraShake * cameraShake : 0;
   if (shake > 0) {
@@ -4143,13 +4143,12 @@ function updateCamera(delta: number) {
     camera.position.y += (Math.random() - 0.5) * shake * 0.5;
   }
 
-  cameraLookTarget.lerp(
+  cameraLookTarget.copy(
     tmpVecB.set(
       player.group.position.x + cameraLookAhead.x,
       groundHeight + 1.05 + terrainLift * 0.25 + player.verticalOffset * 0.35,
       player.group.position.z + cameraLookAhead.z,
     ),
-    1 - Math.pow(0.045, delta),
   );
   camera.lookAt(cameraLookTarget);
 }
