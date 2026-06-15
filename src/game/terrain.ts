@@ -128,6 +128,19 @@ export function sampleTerrainStampHeight(stamp: TerrainHeightStamp, x: number, z
   return 0;
 }
 
+export function isTerrainRampAt(x: number, z: number, margin = 0) {
+  for (const stamp of terrainHeightStamps) {
+    if (stamp.kind !== "ramp") continue;
+    const local = toLocalTerrainPoint(x, z, stamp.x, stamp.z, stamp.rotation);
+    const halfWidth = stamp.width * 0.5 * terrainRampBlockWidthScale + margin;
+    const halfDepth = stamp.depth * 0.5 + margin;
+    if (Math.abs(local.x) <= halfWidth && Math.abs(local.z) <= halfDepth) {
+      return true;
+    }
+  }
+  return false;
+}
+
 export function sampleTerrainNoise(x: number, z: number) {
   void x;
   void z;

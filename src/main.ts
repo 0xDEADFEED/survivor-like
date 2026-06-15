@@ -15,6 +15,7 @@ import {
 } from "./game/storage";
 import {
   sampleTerrainHeightAt,
+  isTerrainRampAt,
   sampleTerrainLedgeBottomHeightAt,
   sampleTerrainLedgeTopHeightAt,
   sampleTerrainNormalAt,
@@ -328,6 +329,7 @@ const playerLedgeDropHeight = 0.75;
 const rampSideStepClearance = 0.12;
 const rampSideJumpClearance = 0.38;
 const playerDamageFlashDuration = 0.22;
+const enemyTouchVerticalTolerance = 1.25;
 const maxLiveParticles = 180;
 const maxFloatingTexts = 70;
 
@@ -2504,7 +2506,8 @@ function updateEnemies(delta: number) {
     }
 
     const touchDistance = enemy.radius + player.radius;
-    if (playerDistance < touchDistance) {
+    const verticalSeparation = Math.abs(enemy.mesh.position.y - player.group.position.y);
+    if (playerDistance < touchDistance && verticalSeparation < enemyTouchVerticalTolerance) {
       const push = (touchDistance - playerDistance) * 0.55;
       enemy.mesh.position.addScaledVector(direction, -push);
       if (canPlayerSkimEnemy(enemy)) {
@@ -2529,17 +2532,24 @@ function slowEnemyForTerrainClimb(enemy: Enemy) {
   const directionX = enemy.velocity.x / speed;
   const directionZ = enemy.velocity.z / speed;
   const currentHeight = sampleTerrainHeight(enemy.mesh.position.x, enemy.mesh.position.z);
-  const lookAhead = enemy.radius + 1.1;
+  const lookAhead = enemy.radius + 0.45;
   const aheadX = enemy.mesh.position.x + directionX * lookAhead;
   const aheadZ = enemy.mesh.position.z + directionZ * lookAhead;
+  if (
+    isTerrainRampAt(enemy.mesh.position.x, enemy.mesh.position.z, enemy.radius) ||
+    isTerrainRampAt(aheadX, aheadZ, enemy.radius)
+  ) {
+    return;
+  }
+
   const aheadHeight = sampleTerrainHeight(aheadX, aheadZ);
   const climb = Math.max(0, aheadHeight - currentHeight);
-  let multiplier = climb > 0.08 ? THREE.MathUtils.clamp(1 - climb * 0.22, 0.42, 0.86) : 1;
+  let multiplier = climb > 0.08 ? THREE.MathUtils.clamp(1 - climb * 0.12, 0.68, 0.92) : 1;
 
   for (const blocker of terrainBlockers) {
     const distance = Math.hypot(aheadX - blocker.x, aheadZ - blocker.z);
     if (distance < blocker.collisionRadius + enemy.radius + 0.55) {
-      multiplier = Math.min(multiplier, 0.58);
+      multiplier = Math.min(multiplier, 0.76);
       break;
     }
   }
