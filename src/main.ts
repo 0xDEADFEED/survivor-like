@@ -314,6 +314,8 @@ const playerSlopeJumpMaxCarry = 1.16;
 const playerLedgeImpactMinSpeed = 3.4;
 const playerLedgeImpactCooldownSeconds = 0.18;
 const playerLedgeDropHeight = 0.75;
+const rampSideStepClearance = 0.12;
+const rampSideJumpClearance = 0.38;
 const maxLiveParticles = 180;
 const maxFloatingTexts = 70;
 
@@ -1298,7 +1300,9 @@ function resolveTerrainBlockers(
 
     const closest = closestPointOnTerrainLedge(position.x, position.z, wall);
     const wallHeight = sampleTerrainHeight(closest.x, closest.z);
-    if (actorHeight >= wallHeight - 0.18) {
+    const alreadyAboveRampSide = dropFromHeight >= wallHeight + rampSideStepClearance;
+    const jumpingAboveRampSide = actorHeight >= wallHeight + rampSideJumpClearance;
+    if (alreadyAboveRampSide || jumpingAboveRampSide) {
       continue;
     }
 
