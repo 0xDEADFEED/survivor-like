@@ -2981,6 +2981,11 @@ function updateEnemyStuckRecovery(
   previousX: number,
   previousZ: number,
 ) {
+  if (isEnemyFollowingRampRoute(enemy)) {
+    enemy.stuckTimer = 0;
+    return;
+  }
+
   const wantedMovement = pathDirection.lengthSq() > 0.35 && enemy.velocity.lengthSq() > 0.35;
   const moved = Math.hypot(enemy.mesh.position.x - previousX, enemy.mesh.position.z - previousZ);
   const expectedMove = enemy.speed * delta * 0.18;
@@ -2997,9 +3002,6 @@ function updateEnemyStuckRecovery(
   enemy.navTargetTimer = 0;
   enemy.pathTimer = 0;
   enemy.pathSide = enemy.pathSide === 1 ? -1 : 1;
-  if (isEnemyFollowingRampRoute(enemy)) {
-    enemy.rampRouteTimer = Math.min(enemy.rampRouteTimer, 0.12);
-  }
   enemy.velocity.multiplyScalar(0.35);
   enemy.stuckTimer = 0;
 }
