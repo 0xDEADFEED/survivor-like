@@ -174,6 +174,9 @@ const player = {
   landingCarryTimer: 0,
   lastJumpBoost: 1,
 };
+let playerBodyMaterial: THREE.MeshStandardMaterial | undefined;
+let playerFaceMaterial: THREE.MeshStandardMaterial | undefined;
+let playerDamageFlashTimer = 0;
 
 const weapon = {
   maceCount: config.weapons.mace.count,
@@ -316,6 +319,7 @@ const playerLedgeImpactCooldownSeconds = 0.18;
 const playerLedgeDropHeight = 0.75;
 const rampSideStepClearance = 0.12;
 const rampSideJumpClearance = 0.38;
+const playerDamageFlashDuration = 0.22;
 const maxLiveParticles = 180;
 const maxFloatingTexts = 70;
 
@@ -1567,13 +1571,19 @@ function addArenaProp(index: number) {
 }
 
 function setupPlayer() {
+  playerBodyMaterial = new THREE.MeshStandardMaterial({
+    color: 0x56d486,
+    roughness: 0.58,
+    metalness: 0.02,
+  });
+  playerFaceMaterial = new THREE.MeshStandardMaterial({
+    color: 0xfff2bb,
+    roughness: 0.45,
+  });
+
   const body = new THREE.Mesh(
     new THREE.CapsuleGeometry(0.58, 0.75, 4, 8),
-    new THREE.MeshStandardMaterial({
-      color: 0x56d486,
-      roughness: 0.58,
-      metalness: 0.02,
-    }),
+    playerBodyMaterial,
   );
   body.position.y = 0.82;
   body.castShadow = true;
@@ -1581,10 +1591,7 @@ function setupPlayer() {
 
   const face = new THREE.Mesh(
     new THREE.ConeGeometry(0.28, 0.58, 4),
-    new THREE.MeshStandardMaterial({
-      color: 0xfff2bb,
-      roughness: 0.45,
-    }),
+    playerFaceMaterial,
   );
   face.position.set(0, 0.9, 0.68);
   face.rotation.x = Math.PI / 2;
@@ -1728,6 +1735,7 @@ function loop(now: number) {
   }
 
   updateCamera(delta);
+  updatePlayerDamageFlash(rawDelta);
   updateTerrainDebug();
   updateCombatOverlays(rawDelta);
   renderer.render(scene, camera);
@@ -3442,6 +3450,7 @@ function spawnHitParticles(position: THREE.Vector3, count: number) {
 
 function hurtPlayer(amount: number) {
   player.health = Math.max(0, player.health - amount);
+  playerDamageFlashTimer = playerDamageFlashDuration;
   cameraShake = Math.max(cameraShake, 0.22);
   if (hurtSoundCooldown <= 0 && player.health > 0) {
     audio.play("hurt");
@@ -3449,6 +3458,18 @@ function hurtPlayer(amount: number) {
   }
   if (player.health <= 0 && gameMode === "running") {
     die();
+  }
+}
+
+function updatePlayerDamageFlash(delta: number) {
+  if (!playerBodyMaterial || !playerFaceMaterial) return;
+
+  playerDamageFlashTimer = Math.max(0, playerDamageFlashTimer - delta);
+  const flash = playerDamageFlashTimer / playerDamageFlashDuration;
+  const intensity = Math.pow(flash, 0.55);
+  for (const material of [playerBodyMaterial, playerFaceMaterial]) {
+    material.emissive.setRGB(intensity, 0, 0);
+    material.emissiveIntensity = 1.35 * intensity;
   }
 }
 
@@ -4246,6 +4267,8 @@ function restart() {
   player.landingCarryTimer = 0;
   player.lastJumpBoost = 1;
   playerLedgeImpactCooldown = 0;
+  playerDamageFlashTimer = 0;
+  updatePlayerDamageFlash(0);
   player.group.scale.set(1, 1, 1);
   updatePlayerGroundShadow();
 
