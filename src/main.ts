@@ -1752,6 +1752,10 @@ function bindEvents() {
     }
   });
 
+  canvas.addEventListener("click", () => {
+    requestCameraPointerLock();
+  });
+
   window.addEventListener("resize", () => {
     renderer.setSize(window.innerWidth, window.innerHeight);
     camera.aspect = window.innerWidth / window.innerHeight;
@@ -1762,12 +1766,31 @@ function bindEvents() {
   rerollButton.addEventListener("click", rerollLevelUpChoices);
   skipButton.addEventListener("click", skipLevelUpChoice);
   resumeButton.addEventListener("click", resumeRun);
-  pauseRestartButton.addEventListener("click", restart);
+  pauseRestartButton.addEventListener("click", restartRunFromOverlay);
   returnStartButton.addEventListener("click", returnToStart);
-  restartButton.addEventListener("click", restart);
+  restartButton.addEventListener("click", restartRunFromOverlay);
 
   for (const toggle of [soundToggle, shakeToggle, damageToggle, particlesToggle, terrainToggle, terrainDebugToggle]) {
     toggle.addEventListener("change", updateSettingsFromControls);
+  }
+}
+
+function requestCameraPointerLock() {
+  if (gameMode !== "running" || document.pointerLockElement === canvas) return;
+  try {
+    canvas.requestPointerLock();
+  } catch {
+    // Pointer lock requires browser support and a user gesture; normal mouse-look still works without it.
+  }
+}
+
+function releaseCameraPointerLock() {
+  if (document.pointerLockElement === canvas) {
+    try {
+      document.exitPointerLock();
+    } catch {
+      // Some browsers can reject unlock while already transitioning.
+    }
   }
 }
 
@@ -3674,6 +3697,7 @@ function gainXp(amount: number) {
 
 function showLevelUp(title = "Pick a power") {
   gameMode = "level-up";
+  releaseCameraPointerLock();
   levelUpOverlay.classList.remove("hidden");
   levelUpTitle.textContent = title;
   currentLevelChoices = pickUpgrades(3);
@@ -3706,6 +3730,7 @@ function chooseUpgrade(upgrade: Upgrade) {
   updateWeaponVisuals();
   levelUpOverlay.classList.add("hidden");
   gameMode = "running";
+  requestCameraPointerLock();
   updateHud();
 }
 
@@ -3722,6 +3747,7 @@ function skipLevelUpChoice() {
   player.health = Math.min(player.maxHealth, player.health + Math.ceil(player.maxHealth * 0.18));
   levelUpOverlay.classList.add("hidden");
   gameMode = "running";
+  requestCameraPointerLock();
   showToast("+5 Coins");
   updateHud();
 }
@@ -4284,6 +4310,7 @@ function getMetaCost(level: number) {
 function pauseRun() {
   gameMode = "paused";
   keys.clear();
+  releaseCameraPointerLock();
   updatePauseCodex();
   pauseOverlay.classList.remove("hidden");
 }
@@ -4292,6 +4319,7 @@ function resumeRun() {
   if (gameMode !== "paused") return;
   gameMode = "running";
   pauseOverlay.classList.add("hidden");
+  requestCameraPointerLock();
 }
 
 function updatePauseCodex() {
@@ -4384,6 +4412,7 @@ function weaponName(id: WeaponId) {
 
 function die() {
   gameMode = "dead";
+  releaseCameraPointerLock();
   const favorite = getFavoriteWeapon();
   const earnedCoins = calculateRunCoins();
   metaProgression.coins += earnedCoins;
@@ -4418,12 +4447,19 @@ function calculateRunCoins() {
 function beginRun() {
   restart();
   startOverlay.classList.add("hidden");
+  requestCameraPointerLock();
+}
+
+function restartRunFromOverlay() {
+  restart();
+  requestCameraPointerLock();
 }
 
 function returnToStart() {
   restart();
   gameMode = "start";
   keys.clear();
+  releaseCameraPointerLock();
   pauseOverlay.classList.add("hidden");
   deathOverlay.classList.add("hidden");
   startOverlay.classList.remove("hidden");
