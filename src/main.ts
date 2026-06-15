@@ -379,6 +379,8 @@ type EnemyRampRoute = {
   highExit: THREE.Vector3;
   height: number;
   plateauIndex: number;
+  sideX: number;
+  sideZ: number;
 };
 
 type TerrainNavPoint = {
@@ -401,6 +403,9 @@ function createTerrainRampRoutes() {
     const high = terrainLocalToWorld(stamp.x, stamp.z, stamp.rotation, 0, halfDepth - 0.45);
     const highExit = terrainLocalToWorld(stamp.x, stamp.z, stamp.rotation, 0, halfDepth + 5.2);
     const plateauIndex = getTerrainPlateauIndexAt(highExit.x, highExit.z, stamp.height);
+    const forwardLength = Math.hypot(high.x - low.x, high.z - low.z) || 1;
+    const forwardX = (high.x - low.x) / forwardLength;
+    const forwardZ = (high.z - low.z) / forwardLength;
     routes.push({
       low: new THREE.Vector3(low.x, 0, low.z),
       lowApproach: new THREE.Vector3(lowApproach.x, 0, lowApproach.z),
@@ -408,6 +413,8 @@ function createTerrainRampRoutes() {
       highExit: new THREE.Vector3(highExit.x, stamp.height, highExit.z),
       height: stamp.height,
       plateauIndex,
+      sideX: -forwardZ,
+      sideZ: forwardX,
     });
   }
   return routes;
@@ -2751,10 +2758,28 @@ function getEnemyRouteNavigationTarget(
     target === route.low ||
     sampleTerrainHeight(target.x, target.z) < 0.7;
   if (enemyGroundHeight < 0.7 && targetIsLowSide) {
-    return getEnemyGroundNavigationTarget(enemy, target, enemyGroundHeight) ?? target;
+    const laneTarget = getEnemyRampLaneTarget(enemy, route, target);
+    return getEnemyGroundNavigationTarget(enemy, laneTarget, enemyGroundHeight) ?? laneTarget;
   }
 
-  return target;
+  return getEnemyRampLaneTarget(enemy, route, target);
+}
+
+function getEnemyRampLaneTarget(enemy: Enemy, route: EnemyRampRoute, target: THREE.Vector3) {
+  const targetIsRampPoint =
+    target === route.low ||
+    target === route.lowApproach ||
+    target === route.high ||
+    target === route.highExit;
+  if (!targetIsRampPoint) return target;
+
+  const laneScale = target === route.low || target === route.high ? 1.25 : 1.9;
+  tmpVecC.set(
+    target.x + route.sideX * enemy.navLane * laneScale,
+    target.y,
+    target.z + route.sideZ * enemy.navLane * laneScale,
+  );
+  return tmpVecC;
 }
 
 function getEnemyRampRouteTarget(
@@ -2876,6 +2901,20 @@ function isEnemyFollowingRampRoute(enemy: Enemy) {
   return enemy.rampRouteTimer > 0 && enemy.rampRouteDirection !== 0 && enemy.rampRouteIndex >= 0;
 }
 
+function isEnemyTraversingRampRoute(enemy: Enemy) {
+  if (!isEnemyFollowingRampRoute(enemy)) return false;
+
+  const route = terrainRampRoutes[enemy.rampRouteIndex];
+  if (!route) return false;
+
+  const groundHeight = sampleTerrainHeight(enemy.mesh.position.x, enemy.mesh.position.z);
+  if (groundHeight > 0.35) return true;
+
+  const distanceToLow = horizontalDistance(enemy.mesh.position, route.low);
+  const distanceToLowApproach = horizontalDistance(enemy.mesh.position, route.lowApproach);
+  return Math.min(distanceToLow, distanceToLowApproach) < 5.8;
+}
+
 function getEnemyRampRouteActorHeight(enemy: Enemy, groundHeight: number) {
   if (!isEnemyFollowingRampRoute(enemy)) return groundHeight;
 
@@ -2942,7 +2981,7 @@ function getBestEnemyRampRouteForPlateau(
 
 function getEnemyPathDirection(enemy: Enemy, directDirection: THREE.Vector3, delta: number) {
   enemy.pathTimer = Math.max(0, enemy.pathTimer - delta);
-  if (isEnemyFollowingRampRoute(enemy)) {
+  if (isEnemyTraversingRampRoute(enemy)) {
     enemy.pathTimer = 0;
     return tmpVecC.copy(directDirection);
   }
@@ -2981,7 +3020,7 @@ function updateEnemyStuckRecovery(
   previousX: number,
   previousZ: number,
 ) {
-  if (isEnemyFollowingRampRoute(enemy)) {
+  if (isEnemyTraversingRampRoute(enemy)) {
     enemy.stuckTimer = 0;
     return;
   }
@@ -3011,7 +3050,7 @@ function updateEnemyPathMemory(
   directDirection: THREE.Vector3,
   collisionInfo: TerrainCollisionInfo,
 ) {
-  if (isEnemyFollowingRampRoute(enemy)) return;
+  if (isEnemyTraversingRampRoute(enemy)) return;
   if (!settings.terrainEnabled || !collisionInfo.hit) return;
 
   const normalLength = Math.hypot(collisionInfo.normalX, collisionInfo.normalZ);
@@ -3187,7 +3226,7 @@ function steerEnemyAroundTerrainBlockers(enemy: Enemy) {
   const nextX = enemy.mesh.position.x + directionX * lookAhead;
   const nextZ = enemy.mesh.position.z + directionZ * lookAhead;
 
-  if (isEnemyFollowingRampRoute(enemy)) return;
+  if (isEnemyTraversingRampRoute(enemy)) return;
 
   for (const blocker of terrainBlockers) {
     const toBlockerX = blocker.x - enemy.mesh.position.x;
@@ -3524,6 +3563,7 @@ function spawnEnemy(kind: EnemyKind) {
     navTarget: new THREE.Vector3(),
     navTargetTimer: 0,
     stuckTimer: 0,
+    navLane: (Math.random() - 0.5) * 2,
     rampRouteTimer: 0,
     rampRouteIndex: -1,
     rampRouteDirection: 0,

@@ -32,6 +32,7 @@ export interface Enemy {
   navTarget: THREE.Vector3;
   navTargetTimer: number;
   stuckTimer: number;
+  navLane: number;
   rampRouteTimer: number;
   rampRouteIndex: number;
   rampRouteDirection: -1 | 0 | 1;
