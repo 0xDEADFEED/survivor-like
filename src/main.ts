@@ -330,6 +330,11 @@ const rampSideStepClearance = 0.12;
 const rampSideJumpClearance = 0.38;
 const playerDamageFlashDuration = 0.22;
 const enemyTouchVerticalTolerance = 1.25;
+const enemySpawnRingMinDistance = 27;
+const enemySpawnRingMaxDistance = 39;
+const bossSpawnRingMinDistance = 38;
+const bossSpawnRingMaxDistance = 50;
+const enemySpawnWorldLimit = 70;
 const maxLiveParticles = 180;
 const maxFloatingTexts = 70;
 
@@ -2984,50 +2989,42 @@ function createEnemyMaterial(kind: EnemyKind) {
 
 function getEnemySpawnPosition(kind: EnemyKind) {
   const enemyRadius = config.enemies[kind].radius;
-  if (spawnGates.length > 0) {
-    const gates = spawnGates
-      .map((gate) => ({
-        gate,
-        distance: horizontalDistance(gate, player.group.position),
-        score: horizontalDistance(gate, player.group.position) + Math.random() * 18,
-      }))
-      .filter(({ distance }) => distance > 24)
-      .sort((a, b) => b.score - a.score);
+  const minDistance = kind === "boss" ? bossSpawnRingMinDistance : enemySpawnRingMinDistance;
+  const maxDistance = kind === "boss" ? bossSpawnRingMaxDistance : enemySpawnRingMaxDistance;
 
-    const pickCount = kind === "boss" ? 1 : Math.min(4, gates.length);
-    const chosen = gates[Math.floor(Math.random() * pickCount)]?.gate;
-    if (chosen) {
-      const spread = kind === "boss" ? 2 : 5.5;
-      for (let attempt = 0; attempt < 8; attempt += 1) {
-        const candidate = chosen.clone().add(
-          new THREE.Vector3(
-            (Math.random() - 0.5) * spread,
-            0,
-            (Math.random() - 0.5) * spread,
-          ),
-        );
-        if (!getTerrainBlockerHit(candidate, enemyRadius)) {
-          return candidate;
-        }
-      }
-      return getNearestUnblockedPosition(chosen.clone(), enemyRadius);
-    }
-  }
-
-  for (let attempt = 0; attempt < 12; attempt += 1) {
+  for (let attempt = 0; attempt < 18; attempt += 1) {
     const angle = Math.random() * Math.PI * 2;
-    const distance = 24 + Math.random() * 18;
+    const distance = THREE.MathUtils.lerp(minDistance, maxDistance, Math.random());
     const candidate = new THREE.Vector3(
       player.group.position.x + Math.cos(angle) * distance,
       0,
       player.group.position.z + Math.sin(angle) * distance,
     );
+    if (!isSpawnPositionInWorld(candidate, enemyRadius)) continue;
     if (!getTerrainBlockerHit(candidate, enemyRadius)) {
       return candidate;
     }
   }
 
-  return getNearestUnblockedPosition(new THREE.Vector3(player.group.position.x + 32, 0, player.group.position.z), enemyRadius);
+  const fallbackAngle = Math.atan2(-player.group.position.z, -player.group.position.x) + (Math.random() - 0.5) * 1.4;
+  const fallback = new THREE.Vector3(
+    player.group.position.x + Math.cos(fallbackAngle) * minDistance,
+    0,
+    player.group.position.z + Math.sin(fallbackAngle) * minDistance,
+  );
+  clampSpawnPositionToWorld(fallback, enemyRadius);
+  return getNearestUnblockedPosition(fallback, enemyRadius);
+}
+
+function isSpawnPositionInWorld(position: THREE.Vector3, radius: number) {
+  const limit = enemySpawnWorldLimit - radius;
+  return Math.abs(position.x) <= limit && Math.abs(position.z) <= limit;
+}
+
+function clampSpawnPositionToWorld(position: THREE.Vector3, radius: number) {
+  const limit = enemySpawnWorldLimit - radius;
+  position.x = THREE.MathUtils.clamp(position.x, -limit, limit);
+  position.z = THREE.MathUtils.clamp(position.z, -limit, limit);
 }
 
 function getNearestUnblockedPosition(position: THREE.Vector3, radius: number) {
@@ -3039,6 +3036,7 @@ function getNearestUnblockedPosition(position: THREE.Vector3, radius: number) {
     hit = getTerrainBlockerHit(position, radius);
     attempts += 1;
   }
+  clampSpawnPositionToWorld(position, radius);
   return position;
 }
 
