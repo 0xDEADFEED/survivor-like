@@ -279,8 +279,6 @@ let lastFrame = 0;
 
 const tmpVec = new THREE.Vector3();
 const tmpVecB = new THREE.Vector3();
-const tmpVecC = new THREE.Vector3();
-const tmpVecD = new THREE.Vector3();
 const cameraPlanarOffset = new THREE.Vector3(0, 0, 19);
 const cameraDesiredOffset = new THREE.Vector3();
 const cameraDesiredPosition = new THREE.Vector3();
@@ -289,15 +287,6 @@ let cameraPitch = 0.55;
 const cameraMouseYawSensitivity = 0.0021;
 const cameraMousePitchSensitivity = 0.00145;
 const playerTerrainCollisionInfo: TerrainCollisionInfo = {
-  hit: false,
-  ledge: false,
-  x: 0,
-  z: 0,
-  normalX: 0,
-  normalZ: 0,
-  push: 0,
-};
-const enemyTerrainCollisionInfo: TerrainCollisionInfo = {
   hit: false,
   ledge: false,
   x: 0,
@@ -372,116 +361,8 @@ type QueryableTerrainLedgeWall = TerrainLedgeWall & {
   queryId?: number;
 };
 
-type EnemyRampRoute = {
-  low: THREE.Vector3;
-  lowApproach: THREE.Vector3;
-  high: THREE.Vector3;
-  highExit: THREE.Vector3;
-  height: number;
-  plateauIndex: number;
-  sideX: number;
-  sideZ: number;
-};
-
-type TerrainNavPoint = {
-  position: THREE.Vector3;
-};
-
 buildTerrainWallGrid(terrainLedgeWalls, terrainLedgeWallGrid);
 buildTerrainWallGrid(terrainRampSideWalls, terrainRampSideWallGrid);
-const terrainRampRoutes = createTerrainRampRoutes();
-const terrainGroundNavPoints = createTerrainGroundNavPoints();
-
-function createTerrainRampRoutes() {
-  const routes: EnemyRampRoute[] = [];
-  for (const stamp of terrainHeightStamps) {
-    if (stamp.kind !== "ramp") continue;
-
-    const halfDepth = stamp.depth * 0.5;
-    const low = terrainLocalToWorld(stamp.x, stamp.z, stamp.rotation, 0, -halfDepth);
-    const lowApproach = terrainLocalToWorld(stamp.x, stamp.z, stamp.rotation, 0, -halfDepth - 2.4);
-    const high = terrainLocalToWorld(stamp.x, stamp.z, stamp.rotation, 0, halfDepth - 0.45);
-    const highExit = terrainLocalToWorld(stamp.x, stamp.z, stamp.rotation, 0, halfDepth + 5.2);
-    const plateauIndex = getTerrainPlateauIndexAt(highExit.x, highExit.z, stamp.height);
-    const forwardLength = Math.hypot(high.x - low.x, high.z - low.z) || 1;
-    const forwardX = (high.x - low.x) / forwardLength;
-    const forwardZ = (high.z - low.z) / forwardLength;
-    routes.push({
-      low: new THREE.Vector3(low.x, 0, low.z),
-      lowApproach: new THREE.Vector3(lowApproach.x, 0, lowApproach.z),
-      high: new THREE.Vector3(high.x, stamp.height, high.z),
-      highExit: new THREE.Vector3(highExit.x, stamp.height, highExit.z),
-      height: stamp.height,
-      plateauIndex,
-      sideX: -forwardZ,
-      sideZ: forwardX,
-    });
-  }
-  return routes;
-}
-
-function getTerrainNavRegion(position: THREE.Vector3, groundHeight = sampleTerrainHeight(position.x, position.z)) {
-  if (groundHeight < 0.7) return -1;
-  const plateauIndex = getTerrainPlateauIndexAt(position.x, position.z, groundHeight);
-  return hasEnemyRampRouteForPlateau(plateauIndex) ? plateauIndex : -1;
-}
-
-function getTerrainPlateauIndexAt(x: number, z: number, height: number) {
-  let plateauIndex = 0;
-  for (const stamp of terrainHeightStamps) {
-    if (stamp.kind !== "plateau") continue;
-    if (Math.abs(height - stamp.height) <= 0.44 && isPointInsideTerrainPlateau(stamp, x, z)) {
-      return plateauIndex;
-    }
-    plateauIndex += 1;
-  }
-  return -1;
-}
-
-function isPointInsideTerrainPlateau(stamp: Extract<TerrainHeightStamp, { kind: "plateau" }>, x: number, z: number) {
-  const local = terrainWorldToLocal(stamp.x, stamp.z, stamp.rotation, x, z);
-  return Math.abs(local.x) <= stamp.width * 0.5 * 0.9 && Math.abs(local.z) <= stamp.depth * 0.5 * 0.86;
-}
-
-function hasEnemyRampRouteForPlateau(plateauIndex: number) {
-  return plateauIndex >= 0 && terrainRampRoutes.some((route) => route.plateauIndex === plateauIndex);
-}
-
-function createTerrainGroundNavPoints() {
-  const points: TerrainNavPoint[] = [];
-  const coordinates = [-58, -38, -19, 0, 19, 38, 58];
-
-  for (const x of coordinates) {
-    for (const z of coordinates) {
-      addTerrainGroundNavPoint(points, x, z);
-    }
-  }
-
-  for (const route of terrainRampRoutes) {
-    addTerrainGroundNavPoint(points, route.lowApproach.x, route.lowApproach.z);
-    addTerrainGroundNavPoint(points, route.low.x, route.low.z);
-  }
-
-  return points;
-}
-
-function addTerrainGroundNavPoint(points: TerrainNavPoint[], x: number, z: number) {
-  if (!isTerrainGroundNavPointClear(x, z)) return;
-  for (const point of points) {
-    if (Math.hypot(point.position.x - x, point.position.z - z) < 2.8) return;
-  }
-  points.push({ position: new THREE.Vector3(x, 0, z) });
-}
-
-function isTerrainGroundNavPointClear(x: number, z: number) {
-  if (sampleTerrainHeight(x, z) > 0.5) return false;
-  for (const blocker of terrainBlockerStamps) {
-    if (Math.hypot(x - blocker.x, z - blocker.z) < blocker.radius + 2.1) {
-      return false;
-    }
-  }
-  return true;
-}
 
 const enemyMaterial = new THREE.MeshStandardMaterial({
   color: 0xd94b35,
@@ -1220,17 +1101,6 @@ function terrainLocalToWorld(centerX: number, centerZ: number, rotation: number,
   return {
     x: centerX + localX * cos - localZ * sin,
     z: centerZ + localX * sin + localZ * cos,
-  };
-}
-
-function terrainWorldToLocal(centerX: number, centerZ: number, rotation: number, x: number, z: number) {
-  const dx = x - centerX;
-  const dz = z - centerZ;
-  const cos = Math.cos(rotation);
-  const sin = Math.sin(rotation);
-  return {
-    x: dx * cos + dz * sin,
-    z: -dx * sin + dz * cos,
   };
 }
 
@@ -2607,41 +2477,23 @@ function updateEnemies(delta: number) {
     toPlayer.y = 0;
     const playerDistance = Math.max(toPlayer.length(), 0.0001);
     const direction = toPlayer.divideScalar(playerDistance);
-    const chaseDirection = getEnemyChaseDirection(enemy, direction, delta);
-    const pathDirection = getEnemyPathDirection(enemy, chaseDirection, delta);
-    const previousEnemyGroundHeight = sampleTerrainHeight(enemy.mesh.position.x, enemy.mesh.position.z);
-    const enemyActorHeight = getEnemyRampRouteActorHeight(enemy, previousEnemyGroundHeight);
 
     if (enemy.kind === "dasher") {
-      updateDasherIntent(enemy, pathDirection, playerDistance, delta);
+      updateDasherIntent(enemy, direction, playerDistance, delta);
     } else if (enemy.kind === "spitter") {
-      updateSpitterIntent(enemy, pathDirection, playerDistance, delta);
+      updateSpitterIntent(enemy, direction, playerDistance, delta);
     } else if (enemy.kind === "shieldbearer") {
-      updateShieldbearerIntent(enemy, pathDirection, playerDistance, delta);
+      updateShieldbearerIntent(enemy, direction, playerDistance, delta);
     } else {
-      tmpVecB.copy(pathDirection).multiplyScalar(enemy.speed);
+      tmpVecB.copy(direction).multiplyScalar(enemy.speed);
       enemy.velocity.lerp(tmpVecB, 1 - Math.pow(0.03, delta));
     }
-    steerEnemyAroundTerrainBlockers(enemy);
-    const previousEnemyX = enemy.mesh.position.x;
-    const previousEnemyZ = enemy.mesh.position.z;
+    slowEnemyForTerrainClimb(enemy);
     enemy.mesh.position.addScaledVector(enemy.velocity, delta);
     enemy.mesh.position.x = THREE.MathUtils.clamp(enemy.mesh.position.x, -72, 72);
     enemy.mesh.position.z = THREE.MathUtils.clamp(enemy.mesh.position.z, -72, 72);
-    resolveTerrainBlockers(
-      enemy.mesh.position,
-      enemy.radius,
-      enemy.velocity,
-      0.72,
-      enemyTerrainCollisionInfo,
-      enemyActorHeight,
-      enemyActorHeight,
-    );
-    updateEnemyStuckRecovery(enemy, pathDirection, delta, previousEnemyX, previousEnemyZ);
-    updateEnemyPathMemory(enemy, chaseDirection, enemyTerrainCollisionInfo);
-    enemy.mesh.position.x = THREE.MathUtils.clamp(enemy.mesh.position.x, -72, 72);
-    enemy.mesh.position.z = THREE.MathUtils.clamp(enemy.mesh.position.z, -72, 72);
-    enemy.mesh.position.y = config.enemies[enemy.kind].y + sampleTerrainHeight(enemy.mesh.position.x, enemy.mesh.position.z);
+    const targetY = config.enemies[enemy.kind].y + sampleTerrainHeight(enemy.mesh.position.x, enemy.mesh.position.z);
+    enemy.mesh.position.y = THREE.MathUtils.lerp(enemy.mesh.position.y, targetY, 1 - Math.pow(0.015, delta));
     enemy.mesh.rotation.y = Math.atan2(enemy.velocity.x, enemy.velocity.z);
     enemy.mesh.rotation.x = Math.sin(runTime * enemy.speed * 0.25) * 0.08;
 
@@ -2668,410 +2520,33 @@ function updateEnemies(delta: number) {
   }
 }
 
-function getEnemyChaseDirection(enemy: Enemy, directDirection: THREE.Vector3, delta: number) {
-  if (!settings.terrainEnabled || terrainRampRoutes.length === 0) {
-    return tmpVecD.copy(directDirection);
-  }
+function slowEnemyForTerrainClimb(enemy: Enemy) {
+  if (!settings.terrainEnabled) return;
 
-  const enemyGroundHeight = sampleTerrainHeight(enemy.mesh.position.x, enemy.mesh.position.z);
-  const playerGroundHeight = sampleTerrainHeight(player.group.position.x, player.group.position.z);
-  const heightDelta = playerGroundHeight - enemyGroundHeight;
-  enemy.rampRouteTimer = Math.max(0, enemy.rampRouteTimer - delta);
-  enemy.navTargetTimer = Math.max(0, enemy.navTargetTimer - delta);
+  const speed = enemy.velocity.length();
+  if (speed <= 0.01) return;
 
-  if (enemy.rampRouteTimer > 0 && enemy.rampRouteIndex >= 0) {
-    const route = terrainRampRoutes[enemy.rampRouteIndex];
-    if (route) {
-      const rawTarget = getEnemyRampRouteTarget(enemy, route, enemy.rampRouteDirection, enemyGroundHeight);
-      const target = getEnemyRouteNavigationTarget(enemy, route, rawTarget, enemyGroundHeight);
-      if (target && !hasEnemyClearedRampRoute(enemy, route, enemy.rampRouteDirection, enemyGroundHeight)) {
-        enemy.rampRouteTimer = Math.max(enemy.rampRouteTimer, 0.35);
-        return directionToEnemyTarget(enemy, target, directDirection);
-      }
-      enemy.rampRouteTimer = 0;
-      enemy.rampRouteDirection = 0;
-    }
-  }
-
-  const enemyRegion = getTerrainNavRegion(enemy.mesh.position, enemyGroundHeight);
-  const playerRegion = getTerrainNavRegion(player.group.position, playerGroundHeight);
-  if (enemyRegion === playerRegion) {
-    enemy.rampRouteDirection = 0;
-    if (enemyRegion < 0) {
-      const target = getEnemyGroundNavigationTarget(enemy, player.group.position, enemyGroundHeight);
-      if (target) return directionToEnemyTarget(enemy, target, directDirection);
-    }
-    return tmpVecD.copy(directDirection);
-  }
-
-  const routePlan = getEnemyNavRoutePlan(enemyRegion, playerRegion, enemy.mesh.position, player.group.position);
-  const route = routePlan?.route ?? (
-    heightDelta > 0
-      ? getBestEnemyRampRoute(playerGroundHeight, enemy.mesh.position, player.group.position, true)
-      : getBestEnemyRampRoute(enemyGroundHeight, enemy.mesh.position, player.group.position, false)
-  );
-  const direction = routePlan?.direction ?? (heightDelta > 0 ? 1 : -1);
-  if (!route) {
-    enemy.rampRouteDirection = 0;
-    return tmpVecD.copy(directDirection);
-  }
-
-  enemy.rampRouteIndex = terrainRampRoutes.indexOf(route);
-  enemy.rampRouteDirection = direction;
-  enemy.rampRouteTimer = 7.2;
-  enemy.pathTimer = 0;
-
-  const rawTarget = getEnemyRampRouteTarget(enemy, route, direction, enemyGroundHeight);
-  const target = getEnemyRouteNavigationTarget(enemy, route, rawTarget, enemyGroundHeight);
-  return directionToEnemyTarget(enemy, target, directDirection);
-}
-
-function getEnemyNavRoutePlan(
-  enemyRegion: number,
-  playerRegion: number,
-  enemyPosition: THREE.Vector3,
-  playerPosition: THREE.Vector3,
-) {
-  if (enemyRegion >= 0 && enemyRegion !== playerRegion) {
-    const route = getBestEnemyRampRouteForPlateau(enemyRegion, enemyPosition, playerPosition, false);
-    return route ? { route, direction: -1 as const } : undefined;
-  }
-
-  if (playerRegion >= 0) {
-    const route = getBestEnemyRampRouteForPlateau(playerRegion, enemyPosition, playerPosition, true);
-    return route ? { route, direction: 1 as const } : undefined;
-  }
-
-  return undefined;
-}
-
-function getEnemyRouteNavigationTarget(
-  enemy: Enemy,
-  route: EnemyRampRoute,
-  target: THREE.Vector3 | undefined,
-  enemyGroundHeight: number,
-) {
-  if (!target) return undefined;
-
-  const targetIsLowSide =
-    target === route.lowApproach ||
-    target === route.low ||
-    sampleTerrainHeight(target.x, target.z) < 0.7;
-  if (enemyGroundHeight < 0.7 && targetIsLowSide) {
-    const laneTarget = getEnemyRampLaneTarget(enemy, route, target);
-    return getEnemyGroundNavigationTarget(enemy, laneTarget, enemyGroundHeight) ?? laneTarget;
-  }
-
-  return getEnemyRampLaneTarget(enemy, route, target);
-}
-
-function getEnemyRampLaneTarget(enemy: Enemy, route: EnemyRampRoute, target: THREE.Vector3) {
-  const targetIsRampPoint =
-    target === route.low ||
-    target === route.lowApproach ||
-    target === route.high ||
-    target === route.highExit;
-  if (!targetIsRampPoint) return target;
-
-  const laneScale = target === route.low || target === route.high ? 1.25 : 1.9;
-  tmpVecC.set(
-    target.x + route.sideX * enemy.navLane * laneScale,
-    target.y,
-    target.z + route.sideZ * enemy.navLane * laneScale,
-  );
-  return tmpVecC;
-}
-
-function getEnemyRampRouteTarget(
-  enemy: Enemy,
-  route: EnemyRampRoute,
-  direction: -1 | 0 | 1,
-  enemyGroundHeight: number,
-) {
-  if (direction > 0) {
-    const distanceToLow = horizontalDistance(enemy.mesh.position, route.low);
-    return enemyGroundHeight > 0.35 || distanceToLow < 4.8 ? route.highExit : route.lowApproach;
-  }
-  if (direction < 0) {
-    const distanceToHigh = horizontalDistance(enemy.mesh.position, route.highExit);
-    return enemyGroundHeight < route.height - 0.35 || distanceToHigh < 4.8 ? route.lowApproach : route.highExit;
-  }
-  return undefined;
-}
-
-function hasEnemyClearedRampRoute(
-  enemy: Enemy,
-  route: EnemyRampRoute,
-  direction: -1 | 0 | 1,
-  enemyGroundHeight: number,
-) {
-  if (direction > 0) {
-    return enemyGroundHeight >= route.height - 0.22 &&
-      horizontalDistance(enemy.mesh.position, route.highExit) < 2.1;
-  }
-  if (direction < 0) {
-    return enemyGroundHeight <= 0.35 &&
-      horizontalDistance(enemy.mesh.position, route.lowApproach) < 2.1;
-  }
-  return true;
-}
-
-function directionToEnemyTarget(enemy: Enemy, target: THREE.Vector3 | undefined, fallback: THREE.Vector3) {
-  if (!target) return tmpVecD.copy(fallback);
-  tmpVecD.subVectors(target, enemy.mesh.position);
-  tmpVecD.y = 0;
-  if (tmpVecD.lengthSq() <= 1.2) {
-    return tmpVecD.copy(fallback);
-  }
-  return tmpVecD.normalize();
-}
-
-function getEnemyGroundNavigationTarget(enemy: Enemy, target: THREE.Vector3, enemyGroundHeight: number) {
-  if (enemyGroundHeight > 0.7 || terrainGroundNavPoints.length === 0) return undefined;
-
-  const radius = enemy.radius + 0.64;
-  if (!isTerrainPathBlocked(enemy.mesh.position, target, radius)) {
-    enemy.navTargetTimer = 0;
-    return undefined;
-  }
-
-  if (
-    enemy.navTargetTimer > 0 &&
-    horizontalDistance(enemy.mesh.position, enemy.navTarget) > 1.6 &&
-    !isTerrainPathBlocked(enemy.mesh.position, enemy.navTarget, radius)
-  ) {
-    return enemy.navTarget;
-  }
-
-  const waypoint = getBestEnemyGroundWaypoint(enemy.mesh.position, target, radius);
-  if (!waypoint) return undefined;
-
-  enemy.navTarget.copy(waypoint);
-  enemy.navTargetTimer = 0.75;
-  return enemy.navTarget;
-}
-
-function getBestEnemyGroundWaypoint(from: THREE.Vector3, target: THREE.Vector3, radius: number) {
-  let bestPoint: THREE.Vector3 | undefined;
-  let bestScore = Infinity;
-
-  for (const point of terrainGroundNavPoints) {
-    if (isTerrainPathBlocked(from, point.position, radius)) continue;
-
-    const targetBlocked = isTerrainPathBlocked(point.position, target, radius);
-    const score =
-      horizontalDistance(from, point.position) +
-      horizontalDistance(point.position, target) * (targetBlocked ? 1.55 : 0.82) +
-      (targetBlocked ? 18 : 0);
-    if (score < bestScore) {
-      bestScore = score;
-      bestPoint = point.position;
-    }
-  }
-
-  return bestPoint;
-}
-
-function isTerrainPathBlocked(from: THREE.Vector3, to: THREE.Vector3, radius: number) {
-  if (!settings.terrainEnabled) return false;
+  const directionX = enemy.velocity.x / speed;
+  const directionZ = enemy.velocity.z / speed;
+  const currentHeight = sampleTerrainHeight(enemy.mesh.position.x, enemy.mesh.position.z);
+  const lookAhead = enemy.radius + 1.1;
+  const aheadX = enemy.mesh.position.x + directionX * lookAhead;
+  const aheadZ = enemy.mesh.position.z + directionZ * lookAhead;
+  const aheadHeight = sampleTerrainHeight(aheadX, aheadZ);
+  const climb = Math.max(0, aheadHeight - currentHeight);
+  let multiplier = climb > 0.08 ? THREE.MathUtils.clamp(1 - climb * 0.22, 0.42, 0.86) : 1;
 
   for (const blocker of terrainBlockers) {
-    if (distancePointToSegment2D(blocker.x, blocker.z, from.x, from.z, to.x, to.z) <= blocker.collisionRadius + radius) {
-      return true;
+    const distance = Math.hypot(aheadX - blocker.x, aheadZ - blocker.z);
+    if (distance < blocker.collisionRadius + enemy.radius + 0.55) {
+      multiplier = Math.min(multiplier, 0.58);
+      break;
     }
   }
 
-  const wallRadius = radius + terrainLedgeThickness + 0.2;
-  for (const wall of terrainLedgeWalls) {
-    if (distanceSegmentToSegment2D(from.x, from.z, to.x, to.z, wall.x1, wall.z1, wall.x2, wall.z2) <= wallRadius) {
-      return true;
-    }
+  if (multiplier < 1) {
+    enemy.velocity.multiplyScalar(multiplier);
   }
-
-  for (const wall of terrainRampSideWalls) {
-    if (distanceSegmentToSegment2D(from.x, from.z, to.x, to.z, wall.x1, wall.z1, wall.x2, wall.z2) <= wallRadius) {
-      return true;
-    }
-  }
-
-  return false;
-}
-
-function isEnemyFollowingRampRoute(enemy: Enemy) {
-  return enemy.rampRouteTimer > 0 && enemy.rampRouteDirection !== 0 && enemy.rampRouteIndex >= 0;
-}
-
-function isEnemyTraversingRampRoute(enemy: Enemy) {
-  if (!isEnemyFollowingRampRoute(enemy)) return false;
-
-  const route = terrainRampRoutes[enemy.rampRouteIndex];
-  if (!route) return false;
-
-  const groundHeight = sampleTerrainHeight(enemy.mesh.position.x, enemy.mesh.position.z);
-  if (groundHeight > 0.35) return true;
-
-  const distanceToLow = horizontalDistance(enemy.mesh.position, route.low);
-  const distanceToLowApproach = horizontalDistance(enemy.mesh.position, route.lowApproach);
-  return Math.min(distanceToLow, distanceToLowApproach) < 5.8;
-}
-
-function getEnemyRampRouteActorHeight(enemy: Enemy, groundHeight: number) {
-  if (!isEnemyFollowingRampRoute(enemy)) return groundHeight;
-
-  const route = terrainRampRoutes[enemy.rampRouteIndex];
-  if (!route || enemy.rampRouteDirection <= 0) return groundHeight;
-
-  const closeToTop = groundHeight >= route.height - 0.62 || horizontalDistance(enemy.mesh.position, route.high) < 4.4;
-  return closeToTop ? Math.max(groundHeight, route.height + 0.08) : groundHeight;
-}
-
-function getBestEnemyRampRoute(
-  targetHeight: number,
-  enemyPosition: THREE.Vector3,
-  playerPosition: THREE.Vector3,
-  ascending: boolean,
-) {
-  let bestRoute: EnemyRampRoute | undefined;
-  let bestScore = Infinity;
-
-  for (const route of terrainRampRoutes) {
-    const heightPenalty = Math.abs(route.height - targetHeight) * 30;
-    if (heightPenalty > 18) continue;
-
-    const enemyTarget = ascending ? route.lowApproach : route.highExit;
-    const playerTarget = ascending ? route.highExit : route.lowApproach;
-    const score =
-      heightPenalty +
-      horizontalDistance(enemyPosition, enemyTarget) +
-      horizontalDistance(playerPosition, playerTarget) * 0.58;
-    if (score < bestScore) {
-      bestScore = score;
-      bestRoute = route;
-    }
-  }
-
-  return bestRoute;
-}
-
-function getBestEnemyRampRouteForPlateau(
-  plateauIndex: number,
-  enemyPosition: THREE.Vector3,
-  playerPosition: THREE.Vector3,
-  ascending: boolean,
-) {
-  let bestRoute: EnemyRampRoute | undefined;
-  let bestScore = Infinity;
-
-  for (const route of terrainRampRoutes) {
-    if (route.plateauIndex !== plateauIndex) continue;
-
-    const enemyTarget = ascending ? route.lowApproach : route.highExit;
-    const playerTarget = ascending ? route.highExit : route.lowApproach;
-    const score =
-      horizontalDistance(enemyPosition, enemyTarget) +
-      horizontalDistance(playerPosition, playerTarget) * 0.45;
-    if (score < bestScore) {
-      bestScore = score;
-      bestRoute = route;
-    }
-  }
-
-  return bestRoute;
-}
-
-function getEnemyPathDirection(enemy: Enemy, directDirection: THREE.Vector3, delta: number) {
-  enemy.pathTimer = Math.max(0, enemy.pathTimer - delta);
-  if (isEnemyTraversingRampRoute(enemy)) {
-    enemy.pathTimer = 0;
-    return tmpVecC.copy(directDirection);
-  }
-  if (!settings.terrainEnabled || enemy.pathTimer <= 0) {
-    return tmpVecC.copy(directDirection);
-  }
-
-  const normalLength = Math.hypot(enemy.pathNormalX, enemy.pathNormalZ);
-  if (normalLength <= 0.001) {
-    enemy.pathTimer = 0;
-    return tmpVecC.copy(directDirection);
-  }
-
-  const normalX = enemy.pathNormalX / normalLength;
-  const normalZ = enemy.pathNormalZ / normalLength;
-  const tangentX = -normalZ * enemy.pathSide;
-  const tangentZ = normalX * enemy.pathSide;
-  const movingIntoObstacle = directDirection.x * normalX + directDirection.z * normalZ < 0;
-  const awayWeight = movingIntoObstacle ? 0.24 : 0.08;
-
-  tmpVecC.set(
-    directDirection.x * 0.38 + tangentX * 0.94 + normalX * awayWeight,
-    0,
-    directDirection.z * 0.38 + tangentZ * 0.94 + normalZ * awayWeight,
-  );
-  if (tmpVecC.lengthSq() <= 0.001) {
-    return tmpVecC.copy(directDirection);
-  }
-  return tmpVecC.normalize();
-}
-
-function updateEnemyStuckRecovery(
-  enemy: Enemy,
-  pathDirection: THREE.Vector3,
-  delta: number,
-  previousX: number,
-  previousZ: number,
-) {
-  if (isEnemyTraversingRampRoute(enemy)) {
-    enemy.stuckTimer = 0;
-    return;
-  }
-
-  const wantedMovement = pathDirection.lengthSq() > 0.35 && enemy.velocity.lengthSq() > 0.35;
-  const moved = Math.hypot(enemy.mesh.position.x - previousX, enemy.mesh.position.z - previousZ);
-  const expectedMove = enemy.speed * delta * 0.18;
-  const farFromPlayer = horizontalDistance(enemy.mesh.position, player.group.position) > enemy.radius + player.radius + 2.2;
-
-  if (wantedMovement && farFromPlayer && moved < expectedMove) {
-    enemy.stuckTimer += delta;
-  } else {
-    enemy.stuckTimer = Math.max(0, enemy.stuckTimer - delta * 1.8);
-  }
-
-  if (enemy.stuckTimer < 0.62) return;
-
-  enemy.navTargetTimer = 0;
-  enemy.pathTimer = 0;
-  enemy.pathSide = enemy.pathSide === 1 ? -1 : 1;
-  enemy.velocity.multiplyScalar(0.35);
-  enemy.stuckTimer = 0;
-}
-
-function updateEnemyPathMemory(
-  enemy: Enemy,
-  directDirection: THREE.Vector3,
-  collisionInfo: TerrainCollisionInfo,
-) {
-  if (isEnemyTraversingRampRoute(enemy)) return;
-  if (!settings.terrainEnabled || !collisionInfo.hit) return;
-
-  const normalLength = Math.hypot(collisionInfo.normalX, collisionInfo.normalZ);
-  if (normalLength <= 0.001) return;
-
-  const normalX = collisionInfo.normalX / normalLength;
-  const normalZ = collisionInfo.normalZ / normalLength;
-  const tangentAX = -normalZ;
-  const tangentAZ = normalX;
-  const tangentBX = normalZ;
-  const tangentBZ = -normalX;
-  const currentSideBonus = enemy.pathTimer > 0 ? 0.16 : 0;
-  const scoreA =
-    tangentAX * directDirection.x + tangentAZ * directDirection.z + (enemy.pathSide === 1 ? currentSideBonus : 0);
-  const scoreB =
-    tangentBX * directDirection.x + tangentBZ * directDirection.z + (enemy.pathSide === -1 ? currentSideBonus : 0);
-
-  enemy.pathSide = scoreA >= scoreB ? 1 : -1;
-  enemy.pathNormalX = normalX;
-  enemy.pathNormalZ = normalZ;
-  enemy.pathTimer = Math.max(enemy.pathTimer, collisionInfo.ledge ? 1.05 : 0.72);
 }
 
 function updateDasherIntent(
@@ -3144,18 +2619,8 @@ function updateSpitterIntent(
     return;
   }
 
-  const strafeAngle = Math.atan2(direction.z, direction.x) + Math.PI / 2;
-  const desired = tmpVecB
-    .set(Math.cos(strafeAngle), 0, Math.sin(strafeAngle))
-    .multiplyScalar(enemy.speed * 0.58);
-
-  if (distance > 14) {
-    desired.addScaledVector(direction, enemy.speed * 0.95);
-  } else if (distance < 8) {
-    desired.addScaledVector(direction, -enemy.speed * 1.25);
-  }
-
-  enemy.velocity.lerp(desired, 1 - Math.pow(0.035, delta));
+  tmpVecB.copy(direction).multiplyScalar(enemy.speed * 0.92);
+  enemy.velocity.lerp(tmpVecB, 1 - Math.pow(0.035, delta));
 }
 
 function updateShieldbearerIntent(
@@ -3212,80 +2677,6 @@ function spawnAirSkimEffect(position: THREE.Vector3) {
     maxLife: 0.2,
     gravity: 2.3,
   });
-}
-
-function steerEnemyAroundTerrainBlockers(enemy: Enemy) {
-  if (!settings.terrainEnabled || (terrainBlockers.length === 0 && terrainLedgeWalls.length === 0)) return;
-
-  const speed = enemy.velocity.length();
-  if (speed <= 0.01) return;
-
-  const directionX = enemy.velocity.x / speed;
-  const directionZ = enemy.velocity.z / speed;
-  const lookAhead = THREE.MathUtils.clamp(speed * 0.35, 1.7, 4.8);
-  const nextX = enemy.mesh.position.x + directionX * lookAhead;
-  const nextZ = enemy.mesh.position.z + directionZ * lookAhead;
-
-  if (isEnemyTraversingRampRoute(enemy)) return;
-
-  for (const blocker of terrainBlockers) {
-    const toBlockerX = blocker.x - enemy.mesh.position.x;
-    const toBlockerZ = blocker.z - enemy.mesh.position.z;
-    const approach = toBlockerX * directionX + toBlockerZ * directionZ;
-    if (approach <= 0) continue;
-
-    const nextDx = nextX - blocker.x;
-    const nextDz = nextZ - blocker.z;
-    const avoidDistance = blocker.collisionRadius + enemy.radius + 1.15;
-    if (nextDx * nextDx + nextDz * nextDz > avoidDistance * avoidDistance) continue;
-
-    let awayX = enemy.mesh.position.x - blocker.x;
-    let awayZ = enemy.mesh.position.z - blocker.z;
-    const awayLength = Math.hypot(awayX, awayZ) || 1;
-    awayX /= awayLength;
-    awayZ /= awayLength;
-
-    const tangentAX = -awayZ;
-    const tangentAZ = awayX;
-    const tangentBX = awayZ;
-    const tangentBZ = -awayX;
-    const useA = tangentAX * directionX + tangentAZ * directionZ > tangentBX * directionX + tangentBZ * directionZ;
-    const tangentX = useA ? tangentAX : tangentBX;
-    const tangentZ = useA ? tangentAZ : tangentBZ;
-    const urgency = 1 - THREE.MathUtils.clamp(Math.hypot(nextDx, nextDz) / avoidDistance, 0, 1);
-
-    enemy.velocity.x += (tangentX * speed * 0.95 + awayX * speed * 0.25) * urgency;
-    enemy.velocity.z += (tangentZ * speed * 0.95 + awayZ * speed * 0.25) * urgency;
-    enemy.velocity.clampLength(0, enemy.speed * 1.35);
-    return;
-  }
-
-  for (const wall of queryTerrainWallGrid(terrainLedgeWallGrid, nextX, nextZ, enemy.radius + terrainLedgeThickness + 1.25)) {
-    const closest = closestPointOnTerrainLedge(nextX, nextZ, wall);
-    const distance = Math.hypot(nextX - closest.x, nextZ - closest.z);
-    const avoidDistance = enemy.radius + terrainLedgeThickness + 1.25;
-    if (distance > avoidDistance) continue;
-
-    const segmentX = wall.x2 - wall.x1;
-    const segmentZ = wall.z2 - wall.z1;
-    const segmentLength = Math.hypot(segmentX, segmentZ) || 1;
-    const tangentAX = segmentX / segmentLength;
-    const tangentAZ = segmentZ / segmentLength;
-    const tangentBX = -tangentAX;
-    const tangentBZ = -tangentAZ;
-    const useA = tangentAX * directionX + tangentAZ * directionZ > tangentBX * directionX + tangentBZ * directionZ;
-    const tangentX = useA ? tangentAX : tangentBX;
-    const tangentZ = useA ? tangentAZ : tangentBZ;
-    const side = (enemy.mesh.position.x - closest.x) * wall.normalX + (enemy.mesh.position.z - closest.z) * wall.normalZ >= 0 ? 1 : -1;
-    const awayX = wall.normalX * side;
-    const awayZ = wall.normalZ * side;
-    const urgency = 1 - THREE.MathUtils.clamp(distance / avoidDistance, 0, 1);
-
-    enemy.velocity.x += (tangentX * speed * 0.9 + awayX * speed * 0.22) * urgency;
-    enemy.velocity.z += (tangentZ * speed * 0.9 + awayZ * speed * 0.22) * urgency;
-    enemy.velocity.clampLength(0, enemy.speed * 1.35);
-    return;
-  }
 }
 
 function updateGems(delta: number) {
@@ -3556,17 +2947,6 @@ function spawnEnemy(kind: EnemyKind) {
     attackCharge: 0,
     attackCooldown: kind === "spitter" ? 1.1 + Math.random() * 0.8 : 0,
     attackTarget: new THREE.Vector3(),
-    pathTimer: 0,
-    pathSide: Math.random() < 0.5 ? -1 : 1,
-    pathNormalX: 0,
-    pathNormalZ: 0,
-    navTarget: new THREE.Vector3(),
-    navTargetTimer: 0,
-    stuckTimer: 0,
-    navLane: (Math.random() - 0.5) * 2,
-    rampRouteTimer: 0,
-    rampRouteIndex: -1,
-    rampRouteDirection: 0,
     baseColor: material.color.clone(),
   };
   enemies.push(enemy);
@@ -5019,62 +4399,6 @@ function horizontalDistance(a: THREE.Vector3, b: THREE.Vector3) {
   return Math.hypot(dx, dz);
 }
 
-function distancePointToSegment2D(
-  px: number,
-  pz: number,
-  ax: number,
-  az: number,
-  bx: number,
-  bz: number,
-) {
-  const abX = bx - ax;
-  const abZ = bz - az;
-  const lengthSq = abX * abX + abZ * abZ;
-  if (lengthSq <= 0.0001) return Math.hypot(px - ax, pz - az);
-
-  const t = THREE.MathUtils.clamp(((px - ax) * abX + (pz - az) * abZ) / lengthSq, 0, 1);
-  return Math.hypot(px - (ax + abX * t), pz - (az + abZ * t));
-}
-
-function distanceSegmentToSegment2D(
-  ax: number,
-  az: number,
-  bx: number,
-  bz: number,
-  cx: number,
-  cz: number,
-  dx: number,
-  dz: number,
-) {
-  if (segmentsIntersect2D(ax, az, bx, bz, cx, cz, dx, dz)) return 0;
-  return Math.min(
-    distancePointToSegment2D(ax, az, cx, cz, dx, dz),
-    distancePointToSegment2D(bx, bz, cx, cz, dx, dz),
-    distancePointToSegment2D(cx, cz, ax, az, bx, bz),
-    distancePointToSegment2D(dx, dz, ax, az, bx, bz),
-  );
-}
-
-function segmentsIntersect2D(
-  ax: number,
-  az: number,
-  bx: number,
-  bz: number,
-  cx: number,
-  cz: number,
-  dx: number,
-  dz: number,
-) {
-  const o1 = orientation2D(ax, az, bx, bz, cx, cz);
-  const o2 = orientation2D(ax, az, bx, bz, dx, dz);
-  const o3 = orientation2D(cx, cz, dx, dz, ax, az);
-  const o4 = orientation2D(cx, cz, dx, dz, bx, bz);
-  return o1 * o2 < 0 && o3 * o4 < 0;
-}
-
-function orientation2D(ax: number, az: number, bx: number, bz: number, cx: number, cz: number) {
-  return (bx - ax) * (cz - az) - (bz - az) * (cx - ax);
-}
 
 function formatTime(seconds: number) {
   const mins = Math.floor(seconds / 60);

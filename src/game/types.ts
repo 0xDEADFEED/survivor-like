@@ -25,17 +25,6 @@ export interface Enemy {
   attackCharge: number;
   attackCooldown: number;
   attackTarget: THREE.Vector3;
-  pathTimer: number;
-  pathSide: -1 | 1;
-  pathNormalX: number;
-  pathNormalZ: number;
-  navTarget: THREE.Vector3;
-  navTargetTimer: number;
-  stuckTimer: number;
-  navLane: number;
-  rampRouteTimer: number;
-  rampRouteIndex: number;
-  rampRouteDirection: -1 | 0 | 1;
   baseColor: THREE.Color;
 }
 
