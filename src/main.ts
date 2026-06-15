@@ -148,6 +148,11 @@ const settings = loadSettings();
 const metaProgression = loadMetaProgression();
 let selectedCharacter: CharacterId = loadSelectedCharacter();
 const audio = new GameAudio(settings);
+const debugStartTime = getDebugNumberParam("debugTime", 0, 0, 600);
+const debugStartLevel = getDebugNumberParam("debugLevel", 1, 1, 50);
+const debugStartEnemies = getDebugNumberParam("debugEnemies", 0, 0, 180);
+const debugStartX = getDebugNumberParam("debugX", 0, -68, 68);
+const debugStartZ = getDebugNumberParam("debugZ", 0, -68, 68);
 
 const player = {
   group: new THREE.Group(),
@@ -410,7 +415,8 @@ function createTerrainRampRoutes() {
 
 function getTerrainNavRegion(position: THREE.Vector3, groundHeight = sampleTerrainHeight(position.x, position.z)) {
   if (groundHeight < 0.7) return -1;
-  return getTerrainPlateauIndexAt(position.x, position.z, groundHeight);
+  const plateauIndex = getTerrainPlateauIndexAt(position.x, position.z, groundHeight);
+  return hasEnemyRampRouteForPlateau(plateauIndex) ? plateauIndex : -1;
 }
 
 function getTerrainPlateauIndexAt(x: number, z: number, height: number) {
@@ -428,6 +434,10 @@ function getTerrainPlateauIndexAt(x: number, z: number, height: number) {
 function isPointInsideTerrainPlateau(stamp: Extract<TerrainHeightStamp, { kind: "plateau" }>, x: number, z: number) {
   const local = terrainWorldToLocal(stamp.x, stamp.z, stamp.rotation, x, z);
   return Math.abs(local.x) <= stamp.width * 0.5 * 0.9 && Math.abs(local.z) <= stamp.depth * 0.5 * 0.86;
+}
+
+function hasEnemyRampRouteForPlateau(plateauIndex: number) {
+  return plateauIndex >= 0 && terrainRampRoutes.some((route) => route.plateauIndex === plateauIndex);
 }
 
 function createTerrainGroundNavPoints() {
@@ -1731,7 +1741,7 @@ function setupPlayer() {
   pickupRing.position.y = 0.04;
 
   player.group.add(body, face, pickupRing);
-  player.group.position.set(0, sampleTerrainHeight(0, 0), 0);
+  player.group.position.set(debugStartX, sampleTerrainHeight(debugStartX, debugStartZ), debugStartZ);
   scene.add(player.group);
 
   playerGroundShadow = new THREE.Mesh(new THREE.CircleGeometry(0.58, 24), playerShadowMaterial.clone());
@@ -4776,13 +4786,25 @@ function calculateRunCoins() {
 
 function beginRun() {
   restart();
+  spawnDebugStartEnemies();
   startOverlay.classList.add("hidden");
   requestCameraPointerLock();
 }
 
 function restartRunFromOverlay() {
   restart();
+  spawnDebugStartEnemies();
   requestCameraPointerLock();
+}
+
+function spawnDebugStartEnemies() {
+  if (debugStartEnemies <= 0) return;
+
+  const wave = getWaveConfig(runTime);
+  for (let i = 0; i < debugStartEnemies && enemies.length < 190; i += 1) {
+    spawnEnemy(pickEnemyKind(wave.weights));
+  }
+  spawnTimer = 0.2;
 }
 
 function returnToStart() {
@@ -4825,7 +4847,7 @@ function restart() {
   player.health = player.maxHealth;
   player.xp = 0;
   player.xpToNext = config.player.xpToNext;
-  player.level = 1;
+  player.level = debugStartLevel;
   player.pickupRadius = config.player.pickupRadius + character.pickupBonus + metaProgression.pickupLevel * 0.28;
   player.damageMultiplier = character.damageMultiplier;
   player.knockbackMultiplier = 1;
@@ -4864,11 +4886,11 @@ function restart() {
     weaponDamage.set(weaponId, 0);
   }
 
-  runTime = 0;
+  runTime = debugStartTime;
   spawnTimer = 0;
-  eliteTimer = 18;
-  nextBossTime = config.waves.firstBossTime;
-  currentWaveName = "Basic Pressure";
+  eliteTimer = debugStartTime > 0 ? 0.3 : 18;
+  nextBossTime = getNextBossTimeAfter(runTime);
+  currentWaveName = getWaveConfig(runTime).name;
   kills = 0;
   bossesDefeated = 0;
   runCoins = 0;
@@ -4932,6 +4954,21 @@ function restart() {
   updateMetaShop();
   updateHud();
   updatePauseCodex();
+}
+
+function getDebugNumberParam(name: string, fallback: number, min: number, max: number) {
+  const value = new URLSearchParams(window.location.search).get(name);
+  if (!value) return fallback;
+
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  return THREE.MathUtils.clamp(parsed, min, max);
+}
+
+function getNextBossTimeAfter(time: number) {
+  if (time < config.waves.firstBossTime) return config.waves.firstBossTime;
+  const intervalsPassed = Math.floor((time - config.waves.firstBossTime) / config.waves.bossInterval) + 1;
+  return config.waves.firstBossTime + intervalsPassed * config.waves.bossInterval;
 }
 
 function horizontalDistance(a: THREE.Vector3, b: THREE.Vector3) {
