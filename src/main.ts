@@ -109,12 +109,12 @@ scene.background = new THREE.Color(0x151b22);
 scene.fog = new THREE.Fog(0x151b22, 34, 92);
 
 const camera = new THREE.PerspectiveCamera(
-  48,
+  52,
   window.innerWidth / window.innerHeight,
   0.1,
   160,
 );
-camera.position.set(0, 15, 23);
+camera.position.set(0, 12.5, 19);
 
 const keys = new Set<string>();
 const enemies: Enemy[] = [];
@@ -277,6 +277,10 @@ const tmpVec = new THREE.Vector3();
 const tmpVecB = new THREE.Vector3();
 const tmpVecC = new THREE.Vector3();
 const tmpVecD = new THREE.Vector3();
+const cameraPlanarOffset = new THREE.Vector3(0, 0, 19);
+const cameraLookAhead = new THREE.Vector3();
+const cameraDesiredOffset = new THREE.Vector3();
+const cameraDesiredPosition = new THREE.Vector3();
 const playerTerrainCollisionInfo: TerrainCollisionInfo = {
   hit: false,
   ledge: false,
@@ -4076,13 +4080,30 @@ function updateWeaponVisuals() {
 function updateCamera(delta: number) {
   const groundHeight = sampleTerrainHeight(player.group.position.x, player.group.position.z);
   const air = THREE.MathUtils.clamp(player.verticalOffset / 2.2, 0, 1);
-  const terrainLift = THREE.MathUtils.clamp(groundHeight * 0.18, 0, 0.45);
-  const desired = tmpVec.set(
-    player.group.position.x,
-    groundHeight + 14.2 + terrainLift + air * 1.0,
-    player.group.position.z + 23.5 + air * 0.95,
+  const terrainLift = THREE.MathUtils.clamp(groundHeight * 0.28, 0, 0.85);
+  const speed = player.velocity.length();
+  const moving = speed > 0.25;
+  const moveX = moving ? player.velocity.x / speed : 0;
+  const moveZ = moving ? player.velocity.z / speed : 0;
+  const speedT = THREE.MathUtils.clamp(speed / Math.max(player.speed, 0.001), 0, 1.25);
+
+  cameraDesiredOffset.set(
+    -moveX * 4.6,
+    0,
+    18.6 - moveZ * 4.4 + speedT * 0.9,
   );
-  camera.position.lerp(desired, 1 - Math.pow(0.004, delta));
+  cameraPlanarOffset.lerp(cameraDesiredOffset, 1 - Math.pow(0.018, delta));
+  cameraLookAhead.lerp(
+    tmpVecB.set(moveX * 4.8 * speedT, 0, moveZ * 4.8 * speedT),
+    1 - Math.pow(0.025, delta),
+  );
+
+  cameraDesiredPosition.set(
+    player.group.position.x + cameraPlanarOffset.x,
+    groundHeight + 11.4 + terrainLift + air * 1.35 + speedT * 0.35,
+    player.group.position.z + cameraPlanarOffset.z + air * 0.8,
+  );
+  camera.position.lerp(cameraDesiredPosition, 1 - Math.pow(0.012, delta));
 
   const shake = settings.screenShake && cameraShake > 0 ? cameraShake * cameraShake : 0;
   if (shake > 0) {
@@ -4092,11 +4113,11 @@ function updateCamera(delta: number) {
 
   cameraLookTarget.lerp(
     tmpVecB.set(
-      player.group.position.x,
-      groundHeight + 0.72 + player.verticalOffset * 0.3,
-      player.group.position.z,
+      player.group.position.x + cameraLookAhead.x,
+      groundHeight + 1.05 + terrainLift * 0.25 + player.verticalOffset * 0.35,
+      player.group.position.z + cameraLookAhead.z,
     ),
-    1 - Math.pow(0.002, delta),
+    1 - Math.pow(0.014, delta),
   );
   camera.lookAt(cameraLookTarget);
 }
