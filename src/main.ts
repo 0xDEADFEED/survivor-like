@@ -98,7 +98,7 @@ const renderer = new THREE.WebGLRenderer({
   antialias: true,
   powerPreference: "high-performance",
 });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -130,6 +130,11 @@ const terrainBlockers: TerrainBlocker[] = [];
 const terrainAccentMeshes: THREE.Object3D[] = [];
 const terrainStampDebugMarkers: THREE.Line[] = [];
 const terrainLedgeDebugMarkers: THREE.Line[] = [];
+const terrainWallCellSize = 12;
+const terrainLedgeWallGrid = new Map<string, QueryableTerrainLedgeWall[]>();
+const terrainRampSideWallGrid = new Map<string, QueryableTerrainLedgeWall[]>();
+const terrainWallQueryScratch: QueryableTerrainLedgeWall[] = [];
+let terrainWallQueryId = 0;
 let terrainMesh: THREE.Mesh | undefined;
 let terrainDebugMesh: THREE.Mesh | undefined;
 let terrainSampleMarker: THREE.Mesh | undefined;
@@ -261,6 +266,8 @@ let hitStop = 0;
 let hurtSoundCooldown = 0;
 let airSkimEffectCooldown = 0;
 let playerLedgeImpactCooldown = 0;
+let combatOverlayTimer = 0;
+let hudTimer = 0;
 let lastFrame = 0;
 
 const tmpVec = new THREE.Vector3();
@@ -280,6 +287,13 @@ const terrainEffectTangent = new THREE.Vector3();
 const terrainEffectSide = new THREE.Vector3();
 const terrainEffectMatrix = new THREE.Matrix4();
 const terrainPlanarNormal = new THREE.Vector3(0, 0, 1);
+const enemyFlashColor = new THREE.Color(0xfff1a5);
+const screenProjectVector = new THREE.Vector3();
+const screenProjection = {
+  x: 0,
+  y: 0,
+  visible: false,
+};
 const raycaster = new THREE.Raycaster();
 const pointer = new THREE.Vector2();
 const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
@@ -300,6 +314,8 @@ const playerSlopeJumpMaxCarry = 1.16;
 const playerLedgeImpactMinSpeed = 3.4;
 const playerLedgeImpactCooldownSeconds = 0.18;
 const playerLedgeDropHeight = 0.75;
+const maxLiveParticles = 180;
+const maxFloatingTexts = 70;
 
 type TerrainBlocker = TerrainBlockerStamp & {
   mesh: THREE.Group;
@@ -326,6 +342,13 @@ type TerrainAnchor = {
   alignToNormal?: boolean;
   yaw?: number;
 };
+
+type QueryableTerrainLedgeWall = TerrainLedgeWall & {
+  queryId?: number;
+};
+
+buildTerrainWallGrid(terrainLedgeWalls, terrainLedgeWallGrid);
+buildTerrainWallGrid(terrainRampSideWalls, terrainRampSideWallGrid);
 
 const enemyMaterial = new THREE.MeshStandardMaterial({
   color: 0xd94b35,
@@ -449,6 +472,21 @@ const dangerTelegraphMaterial = new THREE.MeshBasicMaterial({
   opacity: 0.42,
   depthWrite: false,
 });
+const enemyGeometryByKind: Record<EnemyKind, THREE.BufferGeometry> = {
+  basic: new THREE.IcosahedronGeometry(0.78, 1),
+  heavy: new THREE.DodecahedronGeometry(1.15, 0),
+  swarmer: new THREE.ConeGeometry(0.55, 1.05, 5),
+  dasher: new THREE.ConeGeometry(0.72, 1.35, 5),
+  spitter: new THREE.TetrahedronGeometry(0.88, 0),
+  shieldbearer: new THREE.DodecahedronGeometry(1.08, 0),
+  boss: new THREE.DodecahedronGeometry(1.85, 0),
+};
+const shieldPlateGeometry = new THREE.BoxGeometry(1.35, 0.72, 0.18);
+const gemGeometry = new THREE.OctahedronGeometry(0.32, 0);
+const rockProjectileGeometry = new THREE.DodecahedronGeometry(0.34, 0);
+const rockSplitProjectileGeometry = new THREE.DodecahedronGeometry(0.22, 0);
+const boomerangProjectileGeometry = new THREE.ConeGeometry(0.44, 0.82, 4);
+const hostileProjectileGeometry = new THREE.OctahedronGeometry(0.3, 0);
 const terrainMaterial = new THREE.MeshStandardMaterial({
   color: 0xffffff,
   vertexColors: true,
@@ -543,7 +581,7 @@ function setupWorld() {
   const sun = new THREE.DirectionalLight(0xfff0c0, 3.15);
   sun.position.set(-18, 28, 10);
   sun.castShadow = true;
-  sun.shadow.mapSize.set(2048, 2048);
+  sun.shadow.mapSize.set(1024, 1024);
   sun.shadow.camera.left = -38;
   sun.shadow.camera.right = 38;
   sun.shadow.camera.top = 38;
@@ -1149,12 +1187,12 @@ function getTerrainBlockerHit(position: THREE.Vector3, radius: number) {
       return blocker;
     }
   }
-  for (const wall of terrainLedgeWalls) {
+  for (const wall of queryTerrainWallGrid(terrainLedgeWallGrid, position.x, position.z, radius + terrainLedgeThickness)) {
     if (distanceToTerrainLedgeWall(position.x, position.z, wall) <= radius + terrainLedgeThickness) {
       return wall;
     }
   }
-  for (const wall of terrainRampSideWalls) {
+  for (const wall of queryTerrainWallGrid(terrainRampSideWallGrid, position.x, position.z, radius + terrainLedgeThickness)) {
     if (distanceToTerrainLedgeWall(position.x, position.z, wall) <= radius + terrainLedgeThickness) {
       return wall;
     }
@@ -1212,7 +1250,7 @@ function resolveTerrainBlockers(
     resolved = true;
   }
 
-  for (const wall of terrainLedgeWalls) {
+  for (const wall of queryTerrainWallGrid(terrainLedgeWallGrid, position.x, position.z, radius + terrainLedgeThickness)) {
     if (velocity && dropFromHeight >= wall.topY - 0.28 && velocity.x * wall.normalX + velocity.z * wall.normalZ > 0.02) {
       continue;
     }
@@ -1253,7 +1291,7 @@ function resolveTerrainBlockers(
 
     resolved = true;
   }
-  for (const wall of terrainRampSideWalls) {
+  for (const wall of queryTerrainWallGrid(terrainRampSideWallGrid, position.x, position.z, radius + terrainLedgeThickness)) {
     if (velocity && velocity.x * wall.normalX + velocity.z * wall.normalZ > 0.02) {
       continue;
     }
@@ -1314,6 +1352,61 @@ function recordTerrainCollision(
   collisionInfo.normalX = normalX;
   collisionInfo.normalZ = normalZ;
   collisionInfo.push = push;
+}
+
+function buildTerrainWallGrid(walls: TerrainLedgeWall[], grid: Map<string, QueryableTerrainLedgeWall[]>) {
+  grid.clear();
+  for (const wall of walls as QueryableTerrainLedgeWall[]) {
+    const minX = Math.min(wall.x1, wall.x2) - terrainLedgeThickness;
+    const maxX = Math.max(wall.x1, wall.x2) + terrainLedgeThickness;
+    const minZ = Math.min(wall.z1, wall.z2) - terrainLedgeThickness;
+    const maxZ = Math.max(wall.z1, wall.z2) + terrainLedgeThickness;
+    const minCellX = Math.floor(minX / terrainWallCellSize);
+    const maxCellX = Math.floor(maxX / terrainWallCellSize);
+    const minCellZ = Math.floor(minZ / terrainWallCellSize);
+    const maxCellZ = Math.floor(maxZ / terrainWallCellSize);
+    for (let cellX = minCellX; cellX <= maxCellX; cellX += 1) {
+      for (let cellZ = minCellZ; cellZ <= maxCellZ; cellZ += 1) {
+        const key = terrainWallCellKey(cellX, cellZ);
+        const cell = grid.get(key);
+        if (cell) {
+          cell.push(wall);
+        } else {
+          grid.set(key, [wall]);
+        }
+      }
+    }
+  }
+}
+
+function queryTerrainWallGrid(
+  grid: Map<string, QueryableTerrainLedgeWall[]>,
+  x: number,
+  z: number,
+  radius: number,
+) {
+  terrainWallQueryScratch.length = 0;
+  terrainWallQueryId += 1;
+  const minCellX = Math.floor((x - radius) / terrainWallCellSize);
+  const maxCellX = Math.floor((x + radius) / terrainWallCellSize);
+  const minCellZ = Math.floor((z - radius) / terrainWallCellSize);
+  const maxCellZ = Math.floor((z + radius) / terrainWallCellSize);
+  for (let cellX = minCellX; cellX <= maxCellX; cellX += 1) {
+    for (let cellZ = minCellZ; cellZ <= maxCellZ; cellZ += 1) {
+      const cell = grid.get(terrainWallCellKey(cellX, cellZ));
+      if (!cell) continue;
+      for (const wall of cell) {
+        if (wall.queryId === terrainWallQueryId) continue;
+        wall.queryId = terrainWallQueryId;
+        terrainWallQueryScratch.push(wall);
+      }
+    }
+  }
+  return terrainWallQueryScratch;
+}
+
+function terrainWallCellKey(cellX: number, cellZ: number) {
+  return `${cellX},${cellZ}`;
 }
 
 function distanceToTerrainLedgeWall(x: number, z: number, wall: TerrainLedgeWall) {
@@ -1660,8 +1753,11 @@ function updateGame(delta: number) {
   updateGems(delta);
   updateParticles(delta);
   spawnEnemies();
-  updateHud();
-  updatePauseCodex();
+  hudTimer -= delta;
+  if (hudTimer <= 0) {
+    updateHud();
+    hudTimer = 0.1;
+  }
 }
 
 function updatePausedMotion(delta: number) {
@@ -2032,7 +2128,7 @@ function updateRockToss(delta: number) {
   direction.normalize();
   spawnProjectile({
     weaponId: "rock",
-    geometry: new THREE.DodecahedronGeometry(0.34, 0),
+    geometry: rockProjectileGeometry,
     material: rockMaterial.clone(),
     position: player.group.position.clone().add(new THREE.Vector3(0, 0.78, 0)),
     velocity: direction.multiplyScalar(rockToss.speed),
@@ -2076,7 +2172,7 @@ function updateBoomerangAxe(delta: number) {
   direction.normalize();
   spawnProjectile({
     weaponId: "boomerang",
-    geometry: new THREE.ConeGeometry(0.44, 0.82, 4),
+    geometry: boomerangProjectileGeometry,
     material: axeMaterial.clone(),
     position: origin.clone().add(new THREE.Vector3(0, 0.75, 0)),
     velocity: direction.multiplyScalar(boomerangAxe.speed),
@@ -2241,7 +2337,7 @@ function spawnRockSplit(position: THREE.Vector3, velocity: THREE.Vector3) {
     const angle = baseAngle + offset;
     spawnProjectile({
       weaponId: "rock",
-      geometry: new THREE.DodecahedronGeometry(0.22, 0),
+      geometry: rockSplitProjectileGeometry,
       material: rockMaterial.clone(),
       position: position.clone(),
       velocity: new THREE.Vector3(Math.cos(angle), 0, Math.sin(angle)).multiplyScalar(rockToss.speed * 0.82),
@@ -2256,12 +2352,11 @@ function spawnRockSplit(position: THREE.Vector3, velocity: THREE.Vector3) {
 function removeProjectile(index: number) {
   const projectile = projectiles[index];
   scene.remove(projectile.mesh);
-  projectile.mesh.geometry.dispose();
   projectiles.splice(index, 1);
 }
 
 function spawnHostileProjectile(position: THREE.Vector3, velocity: THREE.Vector3, damage: number) {
-  const mesh = new THREE.Mesh(new THREE.OctahedronGeometry(0.3, 0), enemyShotMaterial.clone());
+  const mesh = new THREE.Mesh(hostileProjectileGeometry, enemyShotMaterial.clone());
   mesh.position.copy(position);
   mesh.position.y = position.y + 0.12;
   scene.add(mesh);
@@ -2277,7 +2372,6 @@ function spawnHostileProjectile(position: THREE.Vector3, velocity: THREE.Vector3
 function removeHostileProjectile(index: number) {
   const projectile = hostileProjectiles[index];
   scene.remove(projectile.mesh);
-  projectile.mesh.geometry.dispose();
   hostileProjectiles.splice(index, 1);
 }
 
@@ -2360,7 +2454,7 @@ function updateEnemies(delta: number) {
     if (enemy.flashTime > 0) {
       enemy.flashTime -= delta;
       const material = enemy.mesh.material as THREE.MeshStandardMaterial;
-      material.color.lerpColors(new THREE.Color(0xfff1a5), enemy.baseColor, 1 - enemy.flashTime / 0.1);
+      material.color.lerpColors(enemyFlashColor, enemy.baseColor, 1 - enemy.flashTime / 0.1);
     }
 
     const touchDistance = enemy.radius + player.radius;
@@ -2564,7 +2658,7 @@ function steerEnemyAroundTerrainBlockers(enemy: Enemy) {
     return;
   }
 
-  for (const wall of terrainLedgeWalls) {
+  for (const wall of queryTerrainWallGrid(terrainLedgeWallGrid, nextX, nextZ, enemy.radius + terrainLedgeThickness + 1.25)) {
     const closest = closestPointOnTerrainLedge(nextX, nextZ, wall);
     const distance = Math.hypot(nextX - closest.x, nextZ - closest.z);
     const avoidDistance = enemy.radius + terrainLedgeThickness + 1.25;
@@ -2619,13 +2713,13 @@ function updateGems(delta: number) {
         spawnImpactRing(player.group.position, 1.5);
       }
       scene.remove(gem.mesh);
-      gem.mesh.geometry.dispose();
       gems.splice(i, 1);
     }
   }
 }
 
 function updateParticles(delta: number) {
+  trimParticleBudget();
   for (let i = particles.length - 1; i >= 0; i -= 1) {
     const particle = particles[i];
     particle.life -= delta;
@@ -2643,14 +2737,26 @@ function updateParticles(delta: number) {
   }
 }
 
+function trimParticleBudget() {
+  while (particles.length > maxLiveParticles) {
+    const particle = particles.shift();
+    if (!particle) return;
+    scene.remove(particle.mesh);
+    particle.mesh.geometry.dispose();
+  }
+}
+
 function updateCombatOverlays(delta: number) {
-  updateEnemyHealthBars();
-  updateBossBar();
+  combatOverlayTimer -= delta;
+  if (combatOverlayTimer <= 0) {
+    updateEnemyHealthBars();
+    updateBossBar();
+    combatOverlayTimer = 0.05;
+  }
   updateFloatingTexts(delta);
 }
 
 function updateEnemyHealthBars() {
-  const screenPosition = new THREE.Vector3();
   for (const enemy of enemies) {
     const shouldShow =
       enemy.kind !== "boss" &&
@@ -2664,9 +2770,9 @@ function updateEnemyHealthBars() {
       continue;
     }
 
-    screenPosition.copy(enemy.mesh.position);
-    screenPosition.y += enemy.radius * 1.55 + 0.6;
-    const projected = projectToScreen(screenPosition);
+    screenProjectVector.copy(enemy.mesh.position);
+    screenProjectVector.y += enemy.radius * 1.55 + 0.6;
+    const projected = projectToScreen(screenProjectVector);
     if (!projected.visible) {
       enemy.healthBar.style.display = "none";
       continue;
@@ -2714,6 +2820,10 @@ function updateFloatingTexts(delta: number) {
 
 function spawnDamageNumber(position: THREE.Vector3, amount: number, big = false) {
   if (!settings.damageNumbers) return;
+  while (floatingTexts.length >= maxFloatingTexts) {
+    const oldest = floatingTexts.shift();
+    oldest?.element.remove();
+  }
   const element = document.createElement("div");
   element.className = `damage-number ${big ? "big" : ""}`;
   element.textContent = String(Math.ceil(amount));
@@ -2728,7 +2838,7 @@ function spawnDamageNumber(position: THREE.Vector3, amount: number, big = false)
 }
 
 function projectToScreen(position: THREE.Vector3) {
-  const projected = position.clone().project(camera);
+  const projected = screenProjectVector.copy(position).project(camera);
   const visible =
     projected.z > -1 &&
     projected.z < 1 &&
@@ -2736,11 +2846,10 @@ function projectToScreen(position: THREE.Vector3) {
     projected.x < 1.2 &&
     projected.y > -1.2 &&
     projected.y < 1.2;
-  return {
-    x: (projected.x * 0.5 + 0.5) * window.innerWidth,
-    y: (-projected.y * 0.5 + 0.5) * window.innerHeight,
-    visible,
-  };
+  screenProjection.x = (projected.x * 0.5 + 0.5) * window.innerWidth;
+  screenProjection.y = (-projected.y * 0.5 + 0.5) * window.innerHeight;
+  screenProjection.visible = visible;
+  return screenProjection;
 }
 
 function spawnEnemies() {
@@ -2802,8 +2911,8 @@ function spawnEnemy(kind: EnemyKind) {
   const minutes = runTime / 60;
   const scaling = 1 + minutes * 0.7;
   const enemyConfig = config.enemies[kind];
-  let geometry: THREE.BufferGeometry;
-  let material: THREE.MeshStandardMaterial;
+  const geometry = enemyGeometryByKind[kind];
+  const material = createEnemyMaterial(kind);
   const hp = enemyConfig.hp * scaling;
   const speed = enemyConfig.speed + minutes * 0.25;
   const radius = enemyConfig.radius;
@@ -2811,36 +2920,13 @@ function spawnEnemy(kind: EnemyKind) {
   const xp = enemyConfig.xp;
   const y = enemyConfig.y;
 
-  if (kind === "heavy") {
-    geometry = new THREE.DodecahedronGeometry(1.15, 0);
-    material = heavyMaterial.clone();
-  } else if (kind === "swarmer") {
-    geometry = new THREE.ConeGeometry(0.55, 1.05, 5);
-    material = swarmerMaterial.clone();
-  } else if (kind === "dasher") {
-    geometry = new THREE.ConeGeometry(0.72, 1.35, 5);
-    material = dasherMaterial.clone();
-  } else if (kind === "spitter") {
-    geometry = new THREE.TetrahedronGeometry(0.88, 0);
-    material = spitterMaterial.clone();
-  } else if (kind === "shieldbearer") {
-    geometry = new THREE.DodecahedronGeometry(1.08, 0);
-    material = shieldbearerMaterial.clone();
-  } else if (kind === "boss") {
-    geometry = new THREE.DodecahedronGeometry(1.85, 0);
-    material = bossMaterial.clone();
-  } else {
-    geometry = new THREE.IcosahedronGeometry(0.78, 1);
-    material = enemyMaterial.clone();
-  }
-
   const mesh = new THREE.Mesh(geometry, material);
   mesh.position.copy(position);
   mesh.position.y = y + sampleTerrainHeight(mesh.position.x, mesh.position.z);
   mesh.castShadow = true;
   mesh.receiveShadow = true;
   if (kind === "shieldbearer") {
-    const shieldPlate = new THREE.Mesh(new THREE.BoxGeometry(1.35, 0.72, 0.18), shieldPlateMaterial.clone());
+    const shieldPlate = new THREE.Mesh(shieldPlateGeometry, shieldPlateMaterial.clone());
     shieldPlate.name = "shield-plate";
     shieldPlate.position.set(0, 0.12, 0.85);
     shieldPlate.castShadow = true;
@@ -2873,6 +2959,25 @@ function spawnEnemy(kind: EnemyKind) {
   };
   enemies.push(enemy);
   return enemy;
+}
+
+function createEnemyMaterial(kind: EnemyKind) {
+  switch (kind) {
+    case "heavy":
+      return heavyMaterial.clone();
+    case "swarmer":
+      return swarmerMaterial.clone();
+    case "dasher":
+      return dasherMaterial.clone();
+    case "spitter":
+      return spitterMaterial.clone();
+    case "shieldbearer":
+      return shieldbearerMaterial.clone();
+    case "boss":
+      return bossMaterial.clone();
+    case "basic":
+      return enemyMaterial.clone();
+  }
 }
 
 function getEnemySpawnPosition(kind: EnemyKind) {
@@ -3019,7 +3124,6 @@ function killEnemy(index: number) {
     spawnHitParticles(enemy.mesh.position, enemy.kind === "heavy" ? 24 : 14);
   }
   scene.remove(enemy.mesh);
-  enemy.mesh.geometry.dispose();
   enemy.healthBar.remove();
   enemies.splice(index, 1);
   cameraShake = Math.max(cameraShake, 0.18);
@@ -3030,7 +3134,7 @@ function killEnemy(index: number) {
 }
 
 function dropXp(position: THREE.Vector3, value: number) {
-  const gem = new THREE.Mesh(new THREE.OctahedronGeometry(0.32, 0), gemMaterial.clone());
+  const gem = new THREE.Mesh(gemGeometry, gemMaterial.clone());
   gem.position.copy(position);
   gem.position.y = sampleTerrainHeight(gem.position.x, gem.position.z) + 0.42;
   gem.scale.setScalar(value >= 10 ? 1.75 : value >= 5 ? 1.28 : 1);
@@ -4097,12 +4201,10 @@ function restart() {
   const character = config.characters[selectedCharacter];
   for (const enemy of enemies.splice(0)) {
     scene.remove(enemy.mesh);
-    enemy.mesh.geometry.dispose();
     enemy.healthBar.remove();
   }
   for (const gem of gems.splice(0)) {
     scene.remove(gem.mesh);
-    gem.mesh.geometry.dispose();
   }
   for (const particle of particles.splice(0)) {
     scene.remove(particle.mesh);
@@ -4110,11 +4212,9 @@ function restart() {
   }
   for (const projectile of projectiles.splice(0)) {
     scene.remove(projectile.mesh);
-    projectile.mesh.geometry.dispose();
   }
   for (const projectile of hostileProjectiles.splice(0)) {
     scene.remove(projectile.mesh);
-    projectile.mesh.geometry.dispose();
   }
   for (const text of floatingTexts.splice(0)) {
     text.element.remove();
