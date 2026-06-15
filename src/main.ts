@@ -277,8 +277,6 @@ const tmpVecB = new THREE.Vector3();
 const tmpVecC = new THREE.Vector3();
 const tmpVecD = new THREE.Vector3();
 const cameraPlanarOffset = new THREE.Vector3(0, 0, 19);
-const cameraLookAhead = new THREE.Vector3();
-const cameraMovementBias = new THREE.Vector3();
 const cameraDesiredOffset = new THREE.Vector3();
 const cameraDesiredPosition = new THREE.Vector3();
 let cameraYaw = 0;
@@ -4187,38 +4185,26 @@ function updateWeaponVisuals() {
 }
 
 function updateCamera(delta: number) {
+  void delta;
   const groundHeight = sampleTerrainHeight(player.group.position.x, player.group.position.z);
   const air = THREE.MathUtils.clamp(player.verticalOffset / 2.2, 0, 1);
   const terrainLift = THREE.MathUtils.clamp(groundHeight * 0.28, 0, 0.85);
-  const speed = player.velocity.length();
-  const moving = speed > 0.25;
-  const moveX = moving ? player.velocity.x / speed : 0;
-  const moveZ = moving ? player.velocity.z / speed : 0;
-  const speedT = THREE.MathUtils.clamp(speed / Math.max(player.speed, 0.001), 0, 1.25);
   const cameraBackX = Math.sin(cameraYaw);
   const cameraBackZ = Math.cos(cameraYaw);
   const cameraDistance = THREE.MathUtils.mapLinear(cameraPitch, 0.38, 0.78, 15.5, 23.5);
   const cameraHeight = Math.tan(cameraPitch) * cameraDistance;
-  cameraMovementBias.lerp(
-    tmpVecB.set(-moveX * 2.2, 0, -moveZ * 2.2),
-    1 - Math.pow(0.035, delta),
-  );
 
   cameraDesiredOffset.set(
-    cameraBackX * (cameraDistance + speedT * 0.8) + cameraMovementBias.x,
+    cameraBackX * cameraDistance,
     0,
-    cameraBackZ * (cameraDistance + speedT * 0.8) + cameraMovementBias.z,
+    cameraBackZ * cameraDistance,
   );
   cameraPlanarOffset.copy(cameraDesiredOffset);
-  cameraLookAhead.lerp(
-    tmpVecB.set(moveX * 4.8 * speedT, 0, moveZ * 4.8 * speedT),
-    1 - Math.pow(0.045, delta),
-  );
 
   cameraDesiredPosition.set(
     player.group.position.x + cameraPlanarOffset.x,
-    groundHeight + cameraHeight + terrainLift + air * 1.35 + speedT * 0.35,
-    player.group.position.z + cameraPlanarOffset.z + air * 0.8,
+    groundHeight + cameraHeight + terrainLift + air * 1.35,
+    player.group.position.z + cameraPlanarOffset.z,
   );
   camera.position.copy(cameraDesiredPosition);
 
@@ -4230,9 +4216,9 @@ function updateCamera(delta: number) {
 
   cameraLookTarget.copy(
     tmpVecB.set(
-      player.group.position.x + cameraLookAhead.x,
+      player.group.position.x,
       groundHeight + 1.05 + terrainLift * 0.25 + player.verticalOffset * 0.35,
-      player.group.position.z + cameraLookAhead.z,
+      player.group.position.z,
     ),
   );
   camera.lookAt(cameraLookTarget);
