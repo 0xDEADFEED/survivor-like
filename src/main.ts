@@ -2518,6 +2518,7 @@ function updateEnemies(delta: number) {
     const chaseDirection = getEnemyChaseDirection(enemy, direction, delta);
     const pathDirection = getEnemyPathDirection(enemy, chaseDirection, delta);
     const previousEnemyGroundHeight = sampleTerrainHeight(enemy.mesh.position.x, enemy.mesh.position.z);
+    const enemyActorHeight = getEnemyRampRouteActorHeight(enemy, previousEnemyGroundHeight);
 
     if (enemy.kind === "dasher") {
       updateDasherIntent(enemy, pathDirection, playerDistance, delta);
@@ -2539,8 +2540,8 @@ function updateEnemies(delta: number) {
       enemy.velocity,
       0.72,
       enemyTerrainCollisionInfo,
-      previousEnemyGroundHeight,
-      previousEnemyGroundHeight,
+      enemyActorHeight,
+      enemyActorHeight,
     );
     updateEnemyPathMemory(enemy, chaseDirection, enemyTerrainCollisionInfo);
     enemy.mesh.position.x = THREE.MathUtils.clamp(enemy.mesh.position.x, -72, 72);
@@ -2608,6 +2609,7 @@ function getEnemyChaseDirection(enemy: Enemy, directDirection: THREE.Vector3, de
   enemy.rampRouteIndex = terrainRampRoutes.indexOf(route);
   enemy.rampRouteDirection = heightDelta > 0 ? 1 : -1;
   enemy.rampRouteTimer = 2.4;
+  enemy.pathTimer = 0;
 
   const target = getEnemyRampRouteTarget(enemy, route, enemy.rampRouteDirection, enemyGroundHeight);
   return directionToEnemyTarget(enemy, target, directDirection);
@@ -2660,6 +2662,20 @@ function directionToEnemyTarget(enemy: Enemy, target: THREE.Vector3 | undefined,
   return tmpVecD.normalize();
 }
 
+function isEnemyFollowingRampRoute(enemy: Enemy) {
+  return enemy.rampRouteTimer > 0 && enemy.rampRouteDirection !== 0 && enemy.rampRouteIndex >= 0;
+}
+
+function getEnemyRampRouteActorHeight(enemy: Enemy, groundHeight: number) {
+  if (!isEnemyFollowingRampRoute(enemy)) return groundHeight;
+
+  const route = terrainRampRoutes[enemy.rampRouteIndex];
+  if (!route || enemy.rampRouteDirection <= 0) return groundHeight;
+
+  const closeToTop = groundHeight >= route.height - 0.62 || horizontalDistance(enemy.mesh.position, route.high) < 4.4;
+  return closeToTop ? Math.max(groundHeight, route.height + 0.08) : groundHeight;
+}
+
 function getBestEnemyRampRoute(
   targetHeight: number,
   enemyPosition: THREE.Vector3,
@@ -2690,6 +2706,10 @@ function getBestEnemyRampRoute(
 
 function getEnemyPathDirection(enemy: Enemy, directDirection: THREE.Vector3, delta: number) {
   enemy.pathTimer = Math.max(0, enemy.pathTimer - delta);
+  if (isEnemyFollowingRampRoute(enemy)) {
+    enemy.pathTimer = 0;
+    return tmpVecC.copy(directDirection);
+  }
   if (!settings.terrainEnabled || enemy.pathTimer <= 0) {
     return tmpVecC.copy(directDirection);
   }
@@ -2723,6 +2743,7 @@ function updateEnemyPathMemory(
   directDirection: THREE.Vector3,
   collisionInfo: TerrainCollisionInfo,
 ) {
+  if (isEnemyFollowingRampRoute(enemy)) return;
   if (!settings.terrainEnabled || !collisionInfo.hit) return;
 
   const normalLength = Math.hypot(collisionInfo.normalX, collisionInfo.normalZ);
