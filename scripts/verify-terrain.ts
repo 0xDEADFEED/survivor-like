@@ -57,6 +57,7 @@ function verifyStamps() {
   assert(terrainHeightStamps.length >= 4, "terrain should have multiple height stamps");
   assert(terrainBlockerStamps.length >= 1, "terrain should have blocker stamps");
   assert(terrainRouteStamps.length >= 1, "terrain should have route tint stamps");
+  const rampAttachmentSides = new Set<string>();
 
   for (const stamp of terrainHeightStamps) {
     assert(stamp.height > 0, "height stamps should raise the terrain");
@@ -81,10 +82,17 @@ function verifyStamps() {
       const centerHeight = sampleTerrainStampHeight(stamp, center.x, center.z);
       const sideHeight = sampleTerrainStampHeight(stamp, side.x, side.z);
       assert(sideHeight <= centerHeight * 0.08, "ramp sides should taper low instead of popping the player up");
+      verifyRampAttachment(stamp, rampAttachmentSides);
     } else {
       assert(false, "clean terrain should avoid smooth hill stamps");
     }
   }
+
+  const rampCount = terrainHeightStamps.filter((stamp) => stamp.kind === "ramp").length;
+  assert(
+    rampAttachmentSides.size >= Math.min(3, rampCount),
+    "ramps should attach to a mix of platform sides instead of all facing one direction",
+  );
 
   for (let i = 0; i < terrainBlockerStamps.length; i += 1) {
     const blocker = terrainBlockerStamps[i];
@@ -101,6 +109,49 @@ function verifyStamps() {
     assert(route.width > 0, "route stamps need positive width");
     assert(route.strength > 0 && route.strength <= 1, "route stamp strength should be normalized");
   }
+}
+
+function verifyRampAttachment(stamp: Extract<TerrainHeightStamp, { kind: "ramp" }>, attachmentSides: Set<string>) {
+  const high = terrainLocalToWorld(stamp.x, stamp.z, stamp.rotation, 0, stamp.depth * 0.5);
+  const forward = terrainForwardFromRotation(stamp.rotation);
+  const insidePlatform = { x: high.x + forward.x * 1.2, z: high.z + forward.z * 1.2 };
+  const outsidePlatform = { x: high.x - forward.x * 1.2, z: high.z - forward.z * 1.2 };
+  const rampTopProbe = { x: high.x - forward.x * 0.08, z: high.z - forward.z * 0.08 };
+  const attachedPlateau = terrainHeightStamps.find((candidate) => {
+    if (candidate.kind !== "plateau" || Math.abs(candidate.height - stamp.height) > 0.04) return false;
+    return sampleTerrainStampHeight(candidate, insidePlatform.x, insidePlatform.z) >= candidate.height - 0.05;
+  });
+
+  assert(attachedPlateau?.kind === "plateau", "ramp high end should meet a matching platform top");
+  assert(
+    sampleTerrainStampHeight(stamp, insidePlatform.x, insidePlatform.z) === 0,
+    "ramp should not extend inside the platform footprint",
+  );
+  assert(
+    sampleTerrainStampHeight(attachedPlateau, outsidePlatform.x, outsidePlatform.z) === 0,
+    "ramp should approach the platform from outside its footprint",
+  );
+  assert(
+    Math.abs(sampleTerrainStampHeight(stamp, rampTopProbe.x, rampTopProbe.z) - attachedPlateau.height) <= 0.04,
+    "ramp top should match the platform height",
+  );
+  assert(
+    sampleTerrainHeightAt(outsidePlatform.x, outsidePlatform.z) < stamp.height - 0.05,
+    "ramp should slope up toward the platform edge",
+  );
+
+  const localHigh = terrainWorldToLocal(attachedPlateau.x, attachedPlateau.z, attachedPlateau.rotation, high.x, high.z);
+  const halfWidth = attachedPlateau.width * 0.5 * 0.9;
+  const halfDepth = attachedPlateau.depth * 0.5 * 0.86;
+  const sideDistances = [
+    { side: "west", distance: Math.abs(localHigh.x + halfWidth) },
+    { side: "east", distance: Math.abs(localHigh.x - halfWidth) },
+    { side: "north", distance: Math.abs(localHigh.z + halfDepth) },
+    { side: "south", distance: Math.abs(localHigh.z - halfDepth) },
+  ];
+  sideDistances.sort((a, b) => a.distance - b.distance);
+  assert(sideDistances[0].distance <= 0.16, "ramp top should sit on a platform edge");
+  attachmentSides.add(sideDistances[0].side);
 }
 
 function verifySamples() {
@@ -221,8 +272,16 @@ function verifyLedgeWalls() {
   for (const wall of terrainRampSideWalls) {
     const length = Math.hypot(wall.x2 - wall.x1, wall.z2 - wall.z1);
     const normalLength = Math.hypot(wall.normalX, wall.normalZ);
-    const lowHeight = sampleTerrainHeightAt(wall.x1, wall.z1);
-    const highHeight = sampleTerrainHeightAt(wall.x2, wall.z2);
+    const directionX = (wall.x2 - wall.x1) / length;
+    const directionZ = (wall.z2 - wall.z1) / length;
+    const lowHeight = sampleTerrainHeightAt(
+      wall.x1 + directionX * 0.16 - wall.normalX * 0.08,
+      wall.z1 + directionZ * 0.16 - wall.normalZ * 0.08,
+    );
+    const highHeight = sampleTerrainHeightAt(
+      wall.x2 - directionX * 0.16 - wall.normalX * 0.08,
+      wall.z2 - directionZ * 0.16 - wall.normalZ * 0.08,
+    );
     assert(length > 4, "ramp side walls should span the ramp body");
     assert(Math.abs(normalLength - 1) < 0.0001, "ramp side wall normals should be normalized");
     assert(wall.topY > 0, "ramp side walls should carry the ramp top height for one-way collision");
@@ -265,6 +324,13 @@ function terrainLocalToWorld(centerX: number, centerZ: number, rotation: number,
   return {
     x: centerX + localX * cos - localZ * sin,
     z: centerZ + localX * sin + localZ * cos,
+  };
+}
+
+function terrainForwardFromRotation(rotation: number) {
+  return {
+    x: -Math.sin(rotation),
+    z: Math.cos(rotation),
   };
 }
 

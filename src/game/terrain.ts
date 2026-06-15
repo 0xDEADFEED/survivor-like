@@ -65,10 +65,10 @@ export const terrainHeightStamps: TerrainHeightStamp[] = [
   { kind: "plateau", x: 29, z: 24, width: 28, depth: 20, rotation: 0.22, height: 2.68, edge: 13.6 },
   { kind: "plateau", x: 0, z: -39, width: 34, depth: 14, rotation: 0, height: 1.72, edge: 11.4 },
   { kind: "plateau", x: 0, z: 40, width: 34, depth: 14, rotation: 0, height: 1.72, edge: 11.4 },
-  { kind: "ramp", x: -15, z: -12, width: 16, depth: 32, rotation: 2.36, height: 2.76, edge: 10.4 },
-  { kind: "ramp", x: 15, z: -13, width: 16, depth: 31, rotation: -2.44, height: 2.42, edge: 10.2 },
-  { kind: "ramp", x: -16, z: 15, width: 17, depth: 33, rotation: 0.86, height: 2.5, edge: 10.5 },
-  { kind: "ramp", x: 15, z: 15, width: 17, depth: 33, rotation: -0.82, height: 2.68, edge: 10.5 },
+  { kind: "ramp", x: -3.5087, z: -14.2007, width: 15, depth: 24, rotation: 1.7508, height: 2.76, edge: 10.4 },
+  { kind: "ramp", x: 29.7014, z: -0.3231, width: 15, depth: 24, rotation: 2.9016, height: 2.42, edge: 10.2 },
+  { kind: "ramp", x: -29.5391, z: 3.7621, width: 15, depth: 24, rotation: -0.12, height: 2.5, edge: 10.5 },
+  { kind: "ramp", x: 5.4294, z: 16.6798, width: 15, depth: 24, rotation: -1.3508, height: 2.68, edge: 10.5 },
 ];
 
 export const terrainBlockerStamps: TerrainBlockerStamp[] = [
