@@ -25,6 +25,10 @@ export interface Enemy {
   attackCharge: number;
   attackCooldown: number;
   attackTarget: THREE.Vector3;
+  pathTimer: number;
+  pathSide: -1 | 1;
+  pathNormalX: number;
+  pathNormalZ: number;
   baseColor: THREE.Color;
 }
 

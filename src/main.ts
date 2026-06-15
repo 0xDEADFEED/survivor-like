@@ -275,7 +275,17 @@ let lastFrame = 0;
 
 const tmpVec = new THREE.Vector3();
 const tmpVecB = new THREE.Vector3();
+const tmpVecC = new THREE.Vector3();
 const playerTerrainCollisionInfo: TerrainCollisionInfo = {
+  hit: false,
+  ledge: false,
+  x: 0,
+  z: 0,
+  normalX: 0,
+  normalZ: 0,
+  push: 0,
+};
+const enemyTerrainCollisionInfo: TerrainCollisionInfo = {
   hit: false,
   ledge: false,
   x: 0,
@@ -2441,22 +2451,24 @@ function updateEnemies(delta: number) {
     toPlayer.y = 0;
     const distance = Math.max(toPlayer.length(), 0.0001);
     const direction = toPlayer.divideScalar(distance);
+    const pathDirection = getEnemyPathDirection(enemy, direction, delta);
 
     if (enemy.kind === "dasher") {
-      updateDasherIntent(enemy, direction, distance, delta);
+      updateDasherIntent(enemy, pathDirection, distance, delta);
     } else if (enemy.kind === "spitter") {
-      updateSpitterIntent(enemy, direction, distance, delta);
+      updateSpitterIntent(enemy, pathDirection, distance, delta);
     } else if (enemy.kind === "shieldbearer") {
-      updateShieldbearerIntent(enemy, direction, distance, delta);
+      updateShieldbearerIntent(enemy, pathDirection, distance, delta);
     } else {
-      tmpVecB.copy(direction).multiplyScalar(enemy.speed);
+      tmpVecB.copy(pathDirection).multiplyScalar(enemy.speed);
       enemy.velocity.lerp(tmpVecB, 1 - Math.pow(0.03, delta));
     }
     steerEnemyAroundTerrainBlockers(enemy);
     enemy.mesh.position.addScaledVector(enemy.velocity, delta);
     enemy.mesh.position.x = THREE.MathUtils.clamp(enemy.mesh.position.x, -72, 72);
     enemy.mesh.position.z = THREE.MathUtils.clamp(enemy.mesh.position.z, -72, 72);
-    resolveTerrainBlockers(enemy.mesh.position, enemy.radius, enemy.velocity, 0.72);
+    resolveTerrainBlockers(enemy.mesh.position, enemy.radius, enemy.velocity, 0.72, enemyTerrainCollisionInfo);
+    updateEnemyPathMemory(enemy, direction, enemyTerrainCollisionInfo);
     enemy.mesh.position.x = THREE.MathUtils.clamp(enemy.mesh.position.x, -72, 72);
     enemy.mesh.position.z = THREE.MathUtils.clamp(enemy.mesh.position.z, -72, 72);
     enemy.mesh.position.y = config.enemies[enemy.kind].y + sampleTerrainHeight(enemy.mesh.position.x, enemy.mesh.position.z);
@@ -2484,6 +2496,64 @@ function updateEnemies(delta: number) {
       killEnemy(i);
     }
   }
+}
+
+function getEnemyPathDirection(enemy: Enemy, directDirection: THREE.Vector3, delta: number) {
+  enemy.pathTimer = Math.max(0, enemy.pathTimer - delta);
+  if (!settings.terrainEnabled || enemy.pathTimer <= 0) {
+    return tmpVecC.copy(directDirection);
+  }
+
+  const normalLength = Math.hypot(enemy.pathNormalX, enemy.pathNormalZ);
+  if (normalLength <= 0.001) {
+    enemy.pathTimer = 0;
+    return tmpVecC.copy(directDirection);
+  }
+
+  const normalX = enemy.pathNormalX / normalLength;
+  const normalZ = enemy.pathNormalZ / normalLength;
+  const tangentX = -normalZ * enemy.pathSide;
+  const tangentZ = normalX * enemy.pathSide;
+  const movingIntoObstacle = directDirection.x * normalX + directDirection.z * normalZ < 0;
+  const awayWeight = movingIntoObstacle ? 0.24 : 0.08;
+
+  tmpVecC.set(
+    directDirection.x * 0.38 + tangentX * 0.94 + normalX * awayWeight,
+    0,
+    directDirection.z * 0.38 + tangentZ * 0.94 + normalZ * awayWeight,
+  );
+  if (tmpVecC.lengthSq() <= 0.001) {
+    return tmpVecC.copy(directDirection);
+  }
+  return tmpVecC.normalize();
+}
+
+function updateEnemyPathMemory(
+  enemy: Enemy,
+  directDirection: THREE.Vector3,
+  collisionInfo: TerrainCollisionInfo,
+) {
+  if (!settings.terrainEnabled || !collisionInfo.hit) return;
+
+  const normalLength = Math.hypot(collisionInfo.normalX, collisionInfo.normalZ);
+  if (normalLength <= 0.001) return;
+
+  const normalX = collisionInfo.normalX / normalLength;
+  const normalZ = collisionInfo.normalZ / normalLength;
+  const tangentAX = -normalZ;
+  const tangentAZ = normalX;
+  const tangentBX = normalZ;
+  const tangentBZ = -normalX;
+  const currentSideBonus = enemy.pathTimer > 0 ? 0.16 : 0;
+  const scoreA =
+    tangentAX * directDirection.x + tangentAZ * directDirection.z + (enemy.pathSide === 1 ? currentSideBonus : 0);
+  const scoreB =
+    tangentBX * directDirection.x + tangentBZ * directDirection.z + (enemy.pathSide === -1 ? currentSideBonus : 0);
+
+  enemy.pathSide = scoreA >= scoreB ? 1 : -1;
+  enemy.pathNormalX = normalX;
+  enemy.pathNormalZ = normalZ;
+  enemy.pathTimer = Math.max(enemy.pathTimer, collisionInfo.ledge ? 1.05 : 0.72);
 }
 
 function updateDasherIntent(
@@ -2966,6 +3036,10 @@ function spawnEnemy(kind: EnemyKind) {
     attackCharge: 0,
     attackCooldown: kind === "spitter" ? 1.1 + Math.random() * 0.8 : 0,
     attackTarget: new THREE.Vector3(),
+    pathTimer: 0,
+    pathSide: Math.random() < 0.5 ? -1 : 1,
+    pathNormalX: 0,
+    pathNormalZ: 0,
     baseColor: material.color.clone(),
   };
   enemies.push(enemy);
