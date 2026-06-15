@@ -29,6 +29,9 @@ export interface Enemy {
   pathSide: -1 | 1;
   pathNormalX: number;
   pathNormalZ: number;
+  rampRouteTimer: number;
+  rampRouteIndex: number;
+  rampRouteDirection: -1 | 0 | 1;
   baseColor: THREE.Color;
 }
 

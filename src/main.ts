@@ -390,7 +390,7 @@ function createTerrainRampRoutes() {
     const low = terrainLocalToWorld(stamp.x, stamp.z, stamp.rotation, 0, -halfDepth);
     const lowApproach = terrainLocalToWorld(stamp.x, stamp.z, stamp.rotation, 0, -halfDepth - 2.4);
     const high = terrainLocalToWorld(stamp.x, stamp.z, stamp.rotation, 0, halfDepth - 0.45);
-    const highExit = terrainLocalToWorld(stamp.x, stamp.z, stamp.rotation, 0, halfDepth + 1.6);
+    const highExit = terrainLocalToWorld(stamp.x, stamp.z, stamp.rotation, 0, halfDepth + 5.2);
     routes.push({
       low: new THREE.Vector3(low.x, 0, low.z),
       lowApproach: new THREE.Vector3(lowApproach.x, 0, lowApproach.z),
@@ -2515,7 +2515,7 @@ function updateEnemies(delta: number) {
     toPlayer.y = 0;
     const playerDistance = Math.max(toPlayer.length(), 0.0001);
     const direction = toPlayer.divideScalar(playerDistance);
-    const chaseDirection = getEnemyChaseDirection(enemy, direction);
+    const chaseDirection = getEnemyChaseDirection(enemy, direction, delta);
     const pathDirection = getEnemyPathDirection(enemy, chaseDirection, delta);
     const previousEnemyGroundHeight = sampleTerrainHeight(enemy.mesh.position.x, enemy.mesh.position.z);
 
@@ -2572,7 +2572,7 @@ function updateEnemies(delta: number) {
   }
 }
 
-function getEnemyChaseDirection(enemy: Enemy, directDirection: THREE.Vector3) {
+function getEnemyChaseDirection(enemy: Enemy, directDirection: THREE.Vector3, delta: number) {
   if (!settings.terrainEnabled || terrainRampRoutes.length === 0) {
     return tmpVecD.copy(directDirection);
   }
@@ -2580,7 +2580,20 @@ function getEnemyChaseDirection(enemy: Enemy, directDirection: THREE.Vector3) {
   const enemyGroundHeight = sampleTerrainHeight(enemy.mesh.position.x, enemy.mesh.position.z);
   const playerGroundHeight = sampleTerrainHeight(player.group.position.x, player.group.position.z);
   const heightDelta = playerGroundHeight - enemyGroundHeight;
+  enemy.rampRouteTimer = Math.max(0, enemy.rampRouteTimer - delta);
+
+  if (enemy.rampRouteTimer > 0 && enemy.rampRouteIndex >= 0) {
+    const route = terrainRampRoutes[enemy.rampRouteIndex];
+    if (route) {
+      const target = getEnemyRampRouteTarget(enemy, route, enemy.rampRouteDirection, enemyGroundHeight);
+      if (target && !hasEnemyClearedRampRoute(enemy, route, enemy.rampRouteDirection, enemyGroundHeight, heightDelta)) {
+        return directionToEnemyTarget(enemy, target, directDirection);
+      }
+    }
+  }
+
   if (Math.abs(heightDelta) < 0.7) {
+    enemy.rampRouteDirection = 0;
     return tmpVecD.copy(directDirection);
   }
 
@@ -2588,24 +2601,61 @@ function getEnemyChaseDirection(enemy: Enemy, directDirection: THREE.Vector3) {
     ? getBestEnemyRampRoute(playerGroundHeight, enemy.mesh.position, player.group.position, true)
     : getBestEnemyRampRoute(enemyGroundHeight, enemy.mesh.position, player.group.position, false);
   if (!route) {
+    enemy.rampRouteDirection = 0;
     return tmpVecD.copy(directDirection);
   }
 
-  let target: THREE.Vector3;
-  if (heightDelta > 0) {
-    const distanceToLow = horizontalDistance(enemy.mesh.position, route.low);
-    const alreadyClimbing = enemyGroundHeight > 0.35 || distanceToLow < 4.8;
-    target = alreadyClimbing ? route.highExit : route.lowApproach;
-  } else {
-    const distanceToHigh = horizontalDistance(enemy.mesh.position, route.highExit);
-    const alreadyDescending = enemyGroundHeight < route.height - 0.35 || distanceToHigh < 4.8;
-    target = alreadyDescending ? route.lowApproach : route.highExit;
-  }
+  enemy.rampRouteIndex = terrainRampRoutes.indexOf(route);
+  enemy.rampRouteDirection = heightDelta > 0 ? 1 : -1;
+  enemy.rampRouteTimer = 2.4;
 
+  const target = getEnemyRampRouteTarget(enemy, route, enemy.rampRouteDirection, enemyGroundHeight);
+  return directionToEnemyTarget(enemy, target, directDirection);
+}
+
+function getEnemyRampRouteTarget(
+  enemy: Enemy,
+  route: EnemyRampRoute,
+  direction: -1 | 0 | 1,
+  enemyGroundHeight: number,
+) {
+  if (direction > 0) {
+    const distanceToLow = horizontalDistance(enemy.mesh.position, route.low);
+    return enemyGroundHeight > 0.35 || distanceToLow < 4.8 ? route.highExit : route.lowApproach;
+  }
+  if (direction < 0) {
+    const distanceToHigh = horizontalDistance(enemy.mesh.position, route.highExit);
+    return enemyGroundHeight < route.height - 0.35 || distanceToHigh < 4.8 ? route.lowApproach : route.highExit;
+  }
+  return undefined;
+}
+
+function hasEnemyClearedRampRoute(
+  enemy: Enemy,
+  route: EnemyRampRoute,
+  direction: -1 | 0 | 1,
+  enemyGroundHeight: number,
+  heightDelta: number,
+) {
+  if (direction > 0) {
+    return enemyGroundHeight >= route.height - 0.22 &&
+      horizontalDistance(enemy.mesh.position, route.highExit) < 2.1 &&
+      Math.abs(heightDelta) < 0.85;
+  }
+  if (direction < 0) {
+    return enemyGroundHeight <= 0.35 &&
+      horizontalDistance(enemy.mesh.position, route.lowApproach) < 2.1 &&
+      Math.abs(heightDelta) < 0.85;
+  }
+  return true;
+}
+
+function directionToEnemyTarget(enemy: Enemy, target: THREE.Vector3 | undefined, fallback: THREE.Vector3) {
+  if (!target) return tmpVecD.copy(fallback);
   tmpVecD.subVectors(target, enemy.mesh.position);
   tmpVecD.y = 0;
   if (tmpVecD.lengthSq() <= 1.2) {
-    return tmpVecD.copy(directDirection);
+    return tmpVecD.copy(fallback);
   }
   return tmpVecD.normalize();
 }
@@ -3180,6 +3230,9 @@ function spawnEnemy(kind: EnemyKind) {
     pathSide: Math.random() < 0.5 ? -1 : 1,
     pathNormalX: 0,
     pathNormalZ: 0,
+    rampRouteTimer: 0,
+    rampRouteIndex: -1,
+    rampRouteDirection: 0,
     baseColor: material.color.clone(),
   };
   enemies.push(enemy);
