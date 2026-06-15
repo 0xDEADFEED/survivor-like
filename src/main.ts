@@ -282,8 +282,8 @@ const cameraDesiredOffset = new THREE.Vector3();
 const cameraDesiredPosition = new THREE.Vector3();
 let cameraYaw = 0;
 let cameraPitch = 0.55;
-const cameraMouseYawSensitivity = 0.0032;
-const cameraMousePitchSensitivity = 0.0022;
+const cameraMouseYawSensitivity = 0.0021;
+const cameraMousePitchSensitivity = 0.00145;
 const playerTerrainCollisionInfo: TerrainCollisionInfo = {
   hit: false,
   ledge: false,
@@ -4124,10 +4124,10 @@ function updateCamera(delta: number) {
     0,
     cameraBackZ * (cameraDistance + speedT * 0.8) - moveZ * 2.2,
   );
-  cameraPlanarOffset.lerp(cameraDesiredOffset, 1 - Math.pow(0.018, delta));
+  cameraPlanarOffset.copy(cameraDesiredOffset);
   cameraLookAhead.lerp(
     tmpVecB.set(moveX * 4.8 * speedT, 0, moveZ * 4.8 * speedT),
-    1 - Math.pow(0.025, delta),
+    1 - Math.pow(0.055, delta),
   );
 
   cameraDesiredPosition.set(
@@ -4135,7 +4135,7 @@ function updateCamera(delta: number) {
     groundHeight + cameraHeight + terrainLift + air * 1.35 + speedT * 0.35,
     player.group.position.z + cameraPlanarOffset.z + air * 0.8,
   );
-  camera.position.lerp(cameraDesiredPosition, 1 - Math.pow(0.012, delta));
+  camera.position.lerp(cameraDesiredPosition, 1 - Math.pow(0.045, delta));
 
   const shake = settings.screenShake && cameraShake > 0 ? cameraShake * cameraShake : 0;
   if (shake > 0) {
@@ -4149,7 +4149,7 @@ function updateCamera(delta: number) {
       groundHeight + 1.05 + terrainLift * 0.25 + player.verticalOffset * 0.35,
       player.group.position.z + cameraLookAhead.z,
     ),
-    1 - Math.pow(0.014, delta),
+    1 - Math.pow(0.045, delta),
   );
   camera.lookAt(cameraLookTarget);
 }
