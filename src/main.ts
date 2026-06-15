@@ -2759,9 +2759,9 @@ function trimParticleBudget() {
 }
 
 function updateCombatOverlays(delta: number) {
+  updateEnemyHealthBars();
   combatOverlayTimer -= delta;
   if (combatOverlayTimer <= 0) {
-    updateEnemyHealthBars();
     updateBossBar();
     combatOverlayTimer = 0.05;
   }
@@ -2791,8 +2791,7 @@ function updateEnemyHealthBars() {
     }
 
     enemy.healthBar.style.display = "block";
-    enemy.healthBar.style.left = `${projected.x}px`;
-    enemy.healthBar.style.top = `${projected.y}px`;
+    enemy.healthBar.style.transform = `translate3d(${projected.x}px, ${projected.y}px, 0) translate(-50%, -50%)`;
     enemy.healthFill.style.transform = `scaleX(${THREE.MathUtils.clamp(enemy.hp / enemy.maxHp, 0, 1)})`;
   }
 }
