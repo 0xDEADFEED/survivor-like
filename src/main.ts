@@ -126,8 +126,6 @@ const floatingTexts: FloatingText[] = [];
 const projectiles: Projectile[] = [];
 const hostileProjectiles: HostileProjectile[] = [];
 const hostileHazards: HostileHazard[] = [];
-const spawnGates: THREE.Vector3[] = [];
-const spawnGateDebugMarkers: THREE.Mesh[] = [];
 const terrainAnchors: TerrainAnchor[] = [];
 const terrainBlockers: TerrainBlocker[] = [];
 const terrainAccentMeshes: THREE.Object3D[] = [];
@@ -621,21 +619,6 @@ const terrainRampSideMaterial = new THREE.MeshStandardMaterial({
   flatShading: true,
   side: THREE.DoubleSide,
 });
-const spawnGateMaterial = new THREE.MeshStandardMaterial({
-  color: 0x374049,
-  emissive: 0x141820,
-  emissiveIntensity: 0.15,
-  roughness: 0.72,
-  metalness: 0.04,
-});
-const spawnGateGlowMaterial = new THREE.MeshBasicMaterial({
-  color: 0xff7a5c,
-  transparent: true,
-  opacity: 0.34,
-  depthWrite: false,
-  side: THREE.DoubleSide,
-});
-
 setupWorld();
 setupPlayer();
 setupHammer();
@@ -666,7 +649,6 @@ function setupWorld() {
   addTerrainAccents();
   rebuildTerrainLedgeWalls();
 
-  addSpawnGates();
   addTerrainBlockers();
 
   for (let i = 0; i < 36; i += 1) {
@@ -985,7 +967,6 @@ function updateTerrainDebug() {
   updateTerrainLedgeDebugMarkers();
   updateTerrainAccentMeshes();
   updateTerrainBlockers();
-  updateSpawnGateDebugMarkers();
   if (!terrainSampleMarker || !terrainSampleLine) return;
 
   terrainSampleMarker.visible = visible;
@@ -1209,9 +1190,6 @@ function updateTerrainAnchors() {
   for (const anchor of terrainAnchors) {
     updateTerrainAnchor(anchor);
   }
-  for (const gate of spawnGates) {
-    gate.y = sampleTerrainHeight(gate.x, gate.z);
-  }
 }
 
 function updateTerrainAnchor(anchor: TerrainAnchor) {
@@ -1233,22 +1211,6 @@ function updateTerrainBlockers() {
     blocker.debug.position.set(blocker.x, y + 0.045, blocker.z);
     alignPlanarMeshToTerrain(blocker.footprint, blocker.x, blocker.z);
     alignPlanarMeshToTerrain(blocker.debug, blocker.x, blocker.z);
-  }
-}
-
-function updateSpawnGateDebugMarkers() {
-  const visible = settings.terrainEnabled && settings.terrainDebug;
-  for (let i = 0; i < spawnGateDebugMarkers.length; i += 1) {
-    const marker = spawnGateDebugMarkers[i];
-    const gate = spawnGates[i];
-    if (!gate) {
-      marker.visible = false;
-      continue;
-    }
-
-    marker.visible = visible;
-    marker.position.set(gate.x, sampleTerrainHeight(gate.x, gate.z) + 0.055, gate.z);
-    alignPlanarMeshToTerrain(marker, gate.x, gate.z);
   }
 }
 
@@ -1510,49 +1472,6 @@ function sampleTerrainHeight(x: number, z: number) {
 function sampleTerrainNormal(x: number, z: number, target = new THREE.Vector3()) {
   if (!settings.terrainEnabled) return target.copy(terrainUp);
   return sampleTerrainNormalAt(x, z, target);
-}
-
-function addSpawnGates() {
-  const radius = 55;
-  for (let i = 0; i < 8; i += 1) {
-    const angle = (i / 8) * Math.PI * 2 + Math.PI / 8;
-    const gatePosition = new THREE.Vector3(Math.cos(angle) * radius, 0, Math.sin(angle) * radius);
-    gatePosition.y = sampleTerrainHeight(gatePosition.x, gatePosition.z);
-    spawnGates.push(gatePosition);
-
-    const group = new THREE.Group();
-    anchorToTerrain(group, gatePosition.x, gatePosition.z);
-    group.rotation.y = -angle + Math.PI / 2;
-
-    const leftPillar = createGatePillar(-1.05);
-    const rightPillar = createGatePillar(1.05);
-    const lintel = new THREE.Mesh(new THREE.BoxGeometry(3, 0.38, 0.55), spawnGateMaterial.clone());
-    lintel.position.set(0, 2.65, 0);
-    lintel.castShadow = true;
-    lintel.receiveShadow = true;
-
-    const glow = new THREE.Mesh(new THREE.RingGeometry(0.95, 1.08, 24), spawnGateGlowMaterial.clone());
-    glow.position.set(0, 1.28, -0.04);
-    glow.rotation.y = Math.PI / 2;
-
-    group.add(leftPillar, rightPillar, lintel, glow);
-    scene.add(group);
-
-    const debugMarker = new THREE.Mesh(new THREE.RingGeometry(1.7, 1.82, 36), blockerDebugMaterial.clone());
-    debugMarker.scale.set(1.05, 1.05, 1.05);
-    debugMarker.visible = false;
-    scene.add(debugMarker);
-    spawnGateDebugMarkers.push(debugMarker);
-  }
-  updateSpawnGateDebugMarkers();
-}
-
-function createGatePillar(x: number) {
-  const pillar = new THREE.Mesh(new THREE.BoxGeometry(0.52, 2.65, 0.62), spawnGateMaterial.clone());
-  pillar.position.set(x, 1.28, 0);
-  pillar.castShadow = true;
-  pillar.receiveShadow = true;
-  return pillar;
 }
 
 function addTerrainBlockers() {
