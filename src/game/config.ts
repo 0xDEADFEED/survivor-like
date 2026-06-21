@@ -140,7 +140,10 @@ export function getWaveConfig(runTime: number): WaveConfig {
       batchSize: 1,
       eliteDelay: 18,
       eliteKind: "heavy",
-      weights: [["basic", 1]],
+      weights: [
+        ["basic", 0.96],
+        ["spitter", 0.04],
+      ],
     };
   }
 
