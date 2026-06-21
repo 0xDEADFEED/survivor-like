@@ -1612,19 +1612,7 @@ function setupPlayer() {
   face.rotation.x = Math.PI / 2;
   face.castShadow = true;
 
-  const pickupRing = new THREE.Mesh(
-    new THREE.TorusGeometry(1, 0.012, 5, 64),
-    new THREE.MeshBasicMaterial({
-      color: 0x72e7f1,
-      transparent: true,
-      opacity: 0.28,
-    }),
-  );
-  pickupRing.name = "pickup-ring";
-  pickupRing.rotation.x = Math.PI / 2;
-  pickupRing.position.y = 0.04;
-
-  player.group.add(body, face, pickupRing);
+  player.group.add(body, face);
   player.group.position.set(debugStartX, sampleTerrainHeight(debugStartX, debugStartZ), debugStartZ);
   scene.add(player.group);
 
@@ -1915,16 +1903,7 @@ function updatePlayer(delta: number) {
     player.group.rotation.y = Math.atan2(faceDirection.x, faceDirection.z);
   }
 
-  const pickupRing = player.group.getObjectByName("pickup-ring");
-  if (pickupRing) {
-    player.pickupPulse = Math.max(0, player.pickupPulse - delta * 3.5);
-    const scale = player.pickupRadius + player.pickupPulse * 1.5;
-    pickupRing.scale.set(scale, scale, scale);
-    const material = pickupRing instanceof THREE.Mesh ? pickupRing.material : undefined;
-    if (material instanceof THREE.MeshBasicMaterial) {
-      material.opacity = 0.22 + player.pickupPulse * 0.28;
-    }
-  }
+  player.pickupPulse = Math.max(0, player.pickupPulse - delta * 3.5);
 }
 
 function queuePlayerJump() {
