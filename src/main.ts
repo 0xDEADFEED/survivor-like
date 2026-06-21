@@ -2745,14 +2745,7 @@ function updateCombatOverlays(delta: number) {
 
 function updateEnemyHealthBars() {
   for (const enemy of enemies) {
-    const shouldShow =
-      enemy.kind !== "boss" &&
-      (enemy.hp < enemy.maxHp ||
-        enemy.kind === "heavy" ||
-        enemy.kind === "dasher" ||
-        enemy.kind === "spitter" ||
-        enemy.kind === "shieldbearer");
-    if (!shouldShow) {
+    if (!shouldShowEnemyHealthBar(enemy.kind)) {
       enemy.healthBar.style.display = "none";
       continue;
     }
@@ -2769,6 +2762,10 @@ function updateEnemyHealthBars() {
     enemy.healthBar.style.transform = `translate3d(${projected.x}px, ${projected.y}px, 0) translate(-50%, -50%)`;
     enemy.healthFill.style.transform = `scaleX(${THREE.MathUtils.clamp(enemy.hp / enemy.maxHp, 0, 1)})`;
   }
+}
+
+function shouldShowEnemyHealthBar(kind: EnemyKind) {
+  return kind === "heavy" || kind === "shieldbearer";
 }
 
 function updateBossBar() {
