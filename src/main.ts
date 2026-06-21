@@ -459,7 +459,7 @@ const impactMaterial = new THREE.MeshBasicMaterial({
 const landingBonkMaterial = new THREE.MeshBasicMaterial({
   color: 0xffcf5f,
   transparent: true,
-  opacity: 0.95,
+  opacity: 0.58,
   depthWrite: false,
   side: THREE.DoubleSide,
 });
@@ -1986,14 +1986,14 @@ function updatePlayerVertical(delta: number) {
       player.grounded = true;
       player.coyoteTimer = playerCoyoteSeconds;
       if (landingVelocity < playerLandingSpeedThreshold) {
-        player.landingSquash = 1;
+        player.landingSquash = 0.55;
         if (player.velocity.lengthSq() > 4) {
           player.velocity.multiplyScalar(1.08).clampLength(0, player.speed * 1.35);
           player.landingCarryTimer = playerLandingCarrySeconds;
         }
-        spawnJumpDust(player.group.position, 1.15);
+        spawnJumpDust(player.group.position, 0.62);
         triggerLandingBonk();
-        cameraShake = Math.max(cameraShake, 0.045);
+        cameraShake = Math.max(cameraShake, 0.018);
       }
     }
   } else {
@@ -2003,13 +2003,13 @@ function updatePlayerVertical(delta: number) {
 }
 
 function updatePlayerSquash(delta: number) {
-  player.landingSquash = Math.max(0, player.landingSquash - delta * 5.8);
+  player.landingSquash = Math.max(0, player.landingSquash - delta * 7.2);
   const jumpStretch = player.grounded ? 0 : THREE.MathUtils.clamp(player.verticalVelocity / playerJumpSpeed, -0.45, 1) * 0.05;
   const squash = player.landingSquash;
   player.group.scale.set(
-    1 + squash * 0.09 - jumpStretch * 0.45,
-    1 - squash * 0.13 + jumpStretch,
-    1 + squash * 0.09 - jumpStretch * 0.45,
+    1 + squash * 0.05 - jumpStretch * 0.45,
+    1 - squash * 0.07 + jumpStretch,
+    1 + squash * 0.05 - jumpStretch * 0.45,
   );
 }
 
@@ -2045,9 +2045,9 @@ function triggerLandingBonk() {
   }
 
   if (hitCount > 0) {
-    cameraShake = Math.max(cameraShake, 0.2);
+    cameraShake = Math.max(cameraShake, 0.1);
+    spawnLandingBonkEffect(player.group.position, playerLandingBonkRadius * 0.78);
   }
-  spawnLandingBonkEffect(player.group.position, hitCount > 0 ? playerLandingBonkRadius : playerLandingBonkRadius * 0.82, hitCount > 0);
 }
 
 function updateMaces(delta: number) {
@@ -3235,8 +3235,8 @@ function spawnLedgeDropEffect(position: THREE.Vector3, previousGroundHeight: num
   });
 }
 
-function spawnLandingBonkEffect(position: THREE.Vector3, radius: number, hitEnemy: boolean) {
-  const ring = new THREE.Mesh(new THREE.RingGeometry(radius * 0.36, radius, 44), landingBonkMaterial.clone());
+function spawnLandingBonkEffect(position: THREE.Vector3, radius: number) {
+  const ring = new THREE.Mesh(new THREE.RingGeometry(radius * 0.52, radius, 36), landingBonkMaterial.clone());
   ring.position.copy(position);
   ring.position.y = sampleTerrainHeight(ring.position.x, ring.position.z) + 0.13;
   alignPlanarMeshToTerrain(ring, ring.position.x, ring.position.z);
@@ -3244,33 +3244,31 @@ function spawnLandingBonkEffect(position: THREE.Vector3, radius: number, hitEnem
   particles.push({
     mesh: ring,
     velocity: new THREE.Vector3(0, 0, 0),
-    life: 0.42,
-    maxLife: 0.42,
+    life: 0.24,
+    maxLife: 0.24,
     gravity: 0,
   });
 
-  if (!hitEnemy) return;
-
-  const sparks = settings.reduceParticles ? 4 : 9;
+  const sparks = settings.reduceParticles ? 2 : 5;
   for (let i = 0; i < sparks; i += 1) {
     const angle = (i / sparks) * Math.PI * 2 + Math.random() * 0.25;
     const sparkMaterial = particleMaterial.clone();
     sparkMaterial.color.set(0xffcf5f);
-    sparkMaterial.opacity = 0.84;
-    const spark = new THREE.Mesh(new THREE.TetrahedronGeometry(0.1, 0), sparkMaterial);
-    const sparkX = position.x + Math.cos(angle) * radius * 0.35;
-    const sparkZ = position.z + Math.sin(angle) * radius * 0.35;
+    sparkMaterial.opacity = 0.62;
+    const spark = new THREE.Mesh(new THREE.TetrahedronGeometry(0.075, 0), sparkMaterial);
+    const sparkX = position.x + Math.cos(angle) * radius * 0.28;
+    const sparkZ = position.z + Math.sin(angle) * radius * 0.28;
     spark.position.set(sparkX, sampleTerrainHeight(sparkX, sparkZ) + 0.18, sparkZ);
     scene.add(spark);
     particles.push({
       mesh: spark,
       velocity: new THREE.Vector3(
-        Math.cos(angle) * (2.5 + Math.random() * 1.8),
-        0.55 + Math.random() * 0.75,
-        Math.sin(angle) * (2.5 + Math.random() * 1.8),
+        Math.cos(angle) * (1.7 + Math.random() * 1.2),
+        0.36 + Math.random() * 0.48,
+        Math.sin(angle) * (1.7 + Math.random() * 1.2),
       ),
-      life: 0.22 + Math.random() * 0.1,
-      maxLife: 0.32,
+      life: 0.14 + Math.random() * 0.08,
+      maxLife: 0.22,
       gravity: 2.2,
     });
   }
