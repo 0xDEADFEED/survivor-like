@@ -38,6 +38,7 @@ import type {
   EnemyKind,
   FloatingText,
   GameMode,
+  HostileHazard,
   HostileProjectile,
   Particle,
   Projectile,
@@ -124,6 +125,7 @@ const particles: Particle[] = [];
 const floatingTexts: FloatingText[] = [];
 const projectiles: Projectile[] = [];
 const hostileProjectiles: HostileProjectile[] = [];
+const hostileHazards: HostileHazard[] = [];
 const spawnGates: THREE.Vector3[] = [];
 const spawnGateDebugMarkers: THREE.Mesh[] = [];
 const terrainAnchors: TerrainAnchor[] = [];
@@ -282,6 +284,7 @@ let restorePointerLockAfterLevelUp = false;
 const tmpVec = new THREE.Vector3();
 const tmpVecB = new THREE.Vector3();
 const tmpVecC = new THREE.Vector3();
+const tmpVecD = new THREE.Vector3();
 const cameraPlanarOffset = new THREE.Vector3(0, 0, 19);
 const cameraDesiredOffset = new THREE.Vector3();
 const cameraDesiredPosition = new THREE.Vector3();
@@ -344,6 +347,17 @@ const enemyFlankStartDistance = 7;
 const enemyFlankFullDistance = 24;
 const playerForwardSpawnChance = 0.58;
 const playerSideSpawnChance = 0.24;
+const chargerWindupSeconds = 0.58;
+const chargerRushSeconds = 0.42;
+const chargerRushMultiplier = 3.45;
+const chargerTelegraphLength = 14;
+const spitterProjectileSpeed = 9.4;
+const spitterLeadSeconds = 0.72;
+const spitterSplashRadius = 1.55;
+const wardenHazardRadius = 3.1;
+const wardenHazardDuration = 3.8;
+const wardenHazardDamagePerSecond = 14;
+const wardenLeadSeconds = 0.54;
 const maxLiveParticles = 180;
 const maxFloatingTexts = 70;
 
@@ -402,12 +416,26 @@ const dasherMaterial = new THREE.MeshStandardMaterial({
   roughness: 0.55,
   metalness: 0.03,
 });
+const chargerMaterial = new THREE.MeshStandardMaterial({
+  color: 0xff6a3d,
+  emissive: 0x4c1608,
+  emissiveIntensity: 0.24,
+  roughness: 0.58,
+  metalness: 0.04,
+});
 const spitterMaterial = new THREE.MeshStandardMaterial({
   color: 0x5fd176,
   emissive: 0x0d3a1b,
   emissiveIntensity: 0.22,
   roughness: 0.6,
   metalness: 0.03,
+});
+const wardenMaterial = new THREE.MeshStandardMaterial({
+  color: 0x5d69d8,
+  emissive: 0x111a58,
+  emissiveIntensity: 0.26,
+  roughness: 0.72,
+  metalness: 0.04,
 });
 const shieldbearerMaterial = new THREE.MeshStandardMaterial({
   color: 0xb74b58,
@@ -496,6 +524,20 @@ const enemyShotMaterial = new THREE.MeshBasicMaterial({
   opacity: 0.86,
   depthWrite: false,
 });
+const hazardMaterial = new THREE.MeshBasicMaterial({
+  color: 0x6c72ff,
+  transparent: true,
+  opacity: 0.34,
+  depthWrite: false,
+  side: THREE.DoubleSide,
+});
+const hazardWarningMaterial = new THREE.MeshBasicMaterial({
+  color: 0xf067ff,
+  transparent: true,
+  opacity: 0.48,
+  depthWrite: false,
+  side: THREE.DoubleSide,
+});
 const dangerTelegraphMaterial = new THREE.MeshBasicMaterial({
   color: 0xff6f5f,
   transparent: true,
@@ -507,7 +549,9 @@ const enemyGeometryByKind: Record<EnemyKind, THREE.BufferGeometry> = {
   heavy: new THREE.DodecahedronGeometry(1.15, 0),
   swarmer: new THREE.ConeGeometry(0.55, 1.05, 5),
   dasher: new THREE.ConeGeometry(0.72, 1.35, 5),
+  charger: new THREE.ConeGeometry(0.84, 1.65, 5),
   spitter: new THREE.TetrahedronGeometry(0.88, 0),
+  warden: new THREE.OctahedronGeometry(1.05, 0),
   shieldbearer: new THREE.DodecahedronGeometry(1.08, 0),
   boss: new THREE.DodecahedronGeometry(1.85, 0),
 };
@@ -1830,6 +1874,7 @@ function updateGame(delta: number) {
   updateLightningZap(delta);
   updateProjectiles(delta);
   updateHostileProjectiles(delta);
+  updateHostileHazards(delta);
   updateEnemies(delta);
   updateGems(delta);
   updateParticles(delta);
@@ -2346,9 +2391,7 @@ function updateHostileProjectiles(delta: number) {
     projectile.mesh.rotation.y += delta * 9;
 
     if (getTerrainBlockerHit(projectile.mesh.position, projectile.radius)) {
-      spawnImpactRing(projectile.mesh.position, 0.78);
-      cameraShake = Math.max(cameraShake, 0.07);
-      removeHostileProjectile(i);
+      detonateHostileProjectile(i, 0.78);
       continue;
     }
 
@@ -2361,8 +2404,37 @@ function updateHostileProjectiles(delta: number) {
       continue;
     }
 
-    if (projectile.life <= 0 || Math.abs(projectile.mesh.position.x) > 90 || Math.abs(projectile.mesh.position.z) > 90) {
+    if (projectile.life <= 0) {
+      detonateHostileProjectile(i, 0.82);
+      continue;
+    }
+
+    if (Math.abs(projectile.mesh.position.x) > 90 || Math.abs(projectile.mesh.position.z) > 90) {
       removeHostileProjectile(i);
+    }
+  }
+}
+
+function updateHostileHazards(delta: number) {
+  for (let i = hostileHazards.length - 1; i >= 0; i -= 1) {
+    const hazard = hostileHazards[i];
+    hazard.life -= delta;
+    const t = THREE.MathUtils.clamp(hazard.life / hazard.maxLife, 0, 1);
+    hazard.mesh.position.y = sampleTerrainHeight(hazard.mesh.position.x, hazard.mesh.position.z) + 0.08;
+    hazard.mesh.scale.setScalar(hazard.radius * (1 + Math.sin(runTime * 9 + hazard.mesh.id) * 0.025));
+    const material = hazard.mesh.material;
+    if (material instanceof THREE.MeshBasicMaterial) {
+      material.opacity = 0.16 + Math.sin(runTime * 10) * 0.04 + t * 0.18;
+    }
+
+    const distance = horizontalDistance(hazard.mesh.position, player.group.position);
+    if (distance <= hazard.radius + player.radius && player.grounded) {
+      hurtPlayer(hazard.damagePerSecond * delta);
+      cameraShake = Math.max(cameraShake, 0.025);
+    }
+
+    if (hazard.life <= 0) {
+      removeHostileHazard(i);
     }
   }
 }
@@ -2424,7 +2496,7 @@ function removeProjectile(index: number) {
   projectiles.splice(index, 1);
 }
 
-function spawnHostileProjectile(position: THREE.Vector3, velocity: THREE.Vector3, damage: number) {
+function spawnHostileProjectile(position: THREE.Vector3, velocity: THREE.Vector3, damage: number, splashRadius = 0) {
   const mesh = new THREE.Mesh(hostileProjectileGeometry, enemyShotMaterial.clone());
   mesh.position.copy(position);
   mesh.position.y = position.y + 0.12;
@@ -2435,13 +2507,51 @@ function spawnHostileProjectile(position: THREE.Vector3, velocity: THREE.Vector3
     damage,
     radius: 0.36,
     life: 3,
+    splashRadius,
   });
+}
+
+function detonateHostileProjectile(index: number, visualScale: number) {
+  const projectile = hostileProjectiles[index];
+  spawnImpactRing(projectile.mesh.position, projectile.splashRadius > 0 ? projectile.splashRadius : visualScale);
+  cameraShake = Math.max(cameraShake, projectile.splashRadius > 0 ? 0.11 : 0.07);
+  if (projectile.splashRadius > 0) {
+    const distance = horizontalDistance(projectile.mesh.position, player.group.position);
+    if (distance <= projectile.splashRadius + player.radius) {
+      const falloff = 1 - THREE.MathUtils.clamp(distance / (projectile.splashRadius + player.radius), 0, 1);
+      hurtPlayer(projectile.damage * (0.28 + falloff * 0.38));
+    }
+  }
+  removeHostileProjectile(index);
 }
 
 function removeHostileProjectile(index: number) {
   const projectile = hostileProjectiles[index];
   scene.remove(projectile.mesh);
   hostileProjectiles.splice(index, 1);
+}
+
+function spawnHostileHazard(position: THREE.Vector3, radius: number, damagePerSecond: number, life: number) {
+  const mesh = new THREE.Mesh(new THREE.CircleGeometry(1, 40), hazardMaterial.clone());
+  mesh.position.copy(position);
+  mesh.position.y = sampleTerrainHeight(mesh.position.x, mesh.position.z) + 0.08;
+  mesh.rotation.x = -Math.PI / 2;
+  mesh.scale.setScalar(radius);
+  scene.add(mesh);
+  hostileHazards.push({
+    mesh,
+    radius,
+    damagePerSecond,
+    life,
+    maxLife: life,
+  });
+}
+
+function removeHostileHazard(index: number) {
+  const hazard = hostileHazards[index];
+  scene.remove(hazard.mesh);
+  hazard.mesh.geometry.dispose();
+  hostileHazards.splice(index, 1);
 }
 
 function findNearestEnemyFrom(position: THREE.Vector3, maxDistance: number, ignored = new Set<Enemy>()) {
@@ -2503,8 +2613,12 @@ function updateEnemies(delta: number) {
 
     if (enemy.kind === "dasher") {
       updateDasherIntent(enemy, pressureDirection, playerDistance, delta, speedMultiplier);
+    } else if (enemy.kind === "charger") {
+      updateChargerIntent(enemy, direction, pressureDirection, playerDistance, delta, speedMultiplier);
     } else if (enemy.kind === "spitter") {
       updateSpitterIntent(enemy, pressureDirection, playerDistance, delta, speedMultiplier);
+    } else if (enemy.kind === "warden") {
+      updateWardenIntent(enemy, pressureDirection, playerDistance, delta, speedMultiplier);
     } else if (enemy.kind === "shieldbearer") {
       updateShieldbearerIntent(enemy, pressureDirection, playerDistance, delta, speedMultiplier);
     } else {
@@ -2618,6 +2732,55 @@ function slowEnemyForTerrainClimb(enemy: Enemy) {
   }
 }
 
+function updateChargerIntent(
+  enemy: Enemy,
+  directDirection: THREE.Vector3,
+  pressureDirection: THREE.Vector3,
+  distance: number,
+  delta: number,
+  speedMultiplier: number,
+) {
+  enemy.dashCooldown -= delta;
+
+  if (enemy.attackCharge > 0) {
+    enemy.attackCharge -= delta;
+    tmpVecB.copy(enemy.attackTarget).multiplyScalar(enemy.speed * chargerRushMultiplier * speedMultiplier);
+    enemy.velocity.lerp(tmpVecB, 1 - Math.pow(0.005, delta));
+    enemy.mesh.scale.set(1.12, 0.92, 1.12);
+    if (enemy.attackCharge <= 0) {
+      enemy.dashCooldown = 2.4 + Math.random() * 0.35;
+      enemy.velocity.multiplyScalar(0.62);
+      enemy.mesh.scale.setScalar(1);
+    }
+    return;
+  }
+
+  if (enemy.dashCharge > 0) {
+    enemy.dashCharge -= delta;
+    enemy.velocity.multiplyScalar(Math.pow(0.03, delta));
+    enemy.mesh.scale.setScalar(1 + Math.sin(runTime * 24) * 0.06);
+    if (enemy.dashCharge <= 0) {
+      enemy.attackTarget.copy(directDirection);
+      enemy.attackCharge = chargerRushSeconds;
+      enemy.mesh.scale.setScalar(1);
+    }
+    return;
+  }
+
+  enemy.mesh.scale.setScalar(1);
+  if (enemy.dashCooldown <= 0 && distance < 23) {
+    enemy.dashCharge = chargerWindupSeconds;
+    enemy.velocity.multiplyScalar(0.25);
+    enemy.attackTarget.copy(directDirection);
+    tmpVecD.copy(enemy.mesh.position).addScaledVector(directDirection, chargerTelegraphLength);
+    spawnDangerLine(enemy.mesh.position, tmpVecD);
+    return;
+  }
+
+  tmpVecB.copy(pressureDirection).multiplyScalar(enemy.speed * 0.94 * speedMultiplier);
+  enemy.velocity.lerp(tmpVecB, 1 - Math.pow(0.04, delta));
+}
+
 function updateDasherIntent(
   enemy: Enemy,
   direction: THREE.Vector3,
@@ -2673,7 +2836,12 @@ function updateSpitterIntent(
       } else {
         shotDirection.normalize();
       }
-      spawnHostileProjectile(enemy.mesh.position, shotDirection.multiplyScalar(9.4), enemy.damage);
+      spawnHostileProjectile(
+        enemy.mesh.position,
+        shotDirection.multiplyScalar(spitterProjectileSpeed),
+        enemy.damage,
+        spitterSplashRadius,
+      );
       spawnImpactRing(enemy.mesh.position, 0.7);
       enemy.attackCooldown = 2.45 + Math.random() * 0.45;
       enemy.mesh.scale.setScalar(1);
@@ -2684,7 +2852,7 @@ function updateSpitterIntent(
   enemy.mesh.scale.setScalar(1);
   if (enemy.attackCooldown <= 0 && distance < 19) {
     enemy.attackCharge = 0.62;
-    enemy.attackTarget.copy(player.group.position);
+    enemy.attackTarget.copy(getPredictedPlayerPosition(enemy.mesh.position, spitterProjectileSpeed, spitterLeadSeconds));
     enemy.velocity.multiplyScalar(0.2);
     spawnDangerLine(enemy.mesh.position, enemy.attackTarget);
     return;
@@ -2692,6 +2860,52 @@ function updateSpitterIntent(
 
   tmpVecB.copy(direction).multiplyScalar(enemy.speed * 0.92 * speedMultiplier);
   enemy.velocity.lerp(tmpVecB, 1 - Math.pow(0.035, delta));
+}
+
+function getPredictedPlayerPosition(from: THREE.Vector3, projectileSpeed: number, maxLeadSeconds: number) {
+  const distance = horizontalDistance(from, player.group.position);
+  const leadSeconds = THREE.MathUtils.clamp(distance / Math.max(projectileSpeed, 0.001), 0, maxLeadSeconds);
+  tmpVecD.copy(player.group.position).addScaledVector(player.velocity, leadSeconds);
+  tmpVecD.x = THREE.MathUtils.clamp(tmpVecD.x, -70, 70);
+  tmpVecD.z = THREE.MathUtils.clamp(tmpVecD.z, -70, 70);
+  tmpVecD.y = sampleTerrainHeight(tmpVecD.x, tmpVecD.z);
+  return tmpVecD;
+}
+
+function updateWardenIntent(
+  enemy: Enemy,
+  direction: THREE.Vector3,
+  distance: number,
+  delta: number,
+  speedMultiplier: number,
+) {
+  enemy.attackCooldown -= delta;
+
+  if (enemy.attackCharge > 0) {
+    enemy.attackCharge -= delta;
+    enemy.velocity.multiplyScalar(Math.pow(0.04, delta));
+    enemy.mesh.scale.setScalar(1 + Math.sin(runTime * 18) * 0.05);
+    if (enemy.attackCharge <= 0) {
+      spawnHostileHazard(enemy.attackTarget, wardenHazardRadius, wardenHazardDamagePerSecond, wardenHazardDuration);
+      spawnImpactRing(enemy.attackTarget, wardenHazardRadius * 0.72);
+      enemy.attackCooldown = 4.6 + Math.random() * 0.7;
+      enemy.mesh.scale.setScalar(1);
+    }
+    return;
+  }
+
+  enemy.mesh.scale.setScalar(1);
+  if (enemy.attackCooldown <= 0 && distance < 25) {
+    enemy.attackCharge = 0.76;
+    enemy.attackTarget.copy(getPredictedPlayerPosition(enemy.mesh.position, 11, wardenLeadSeconds));
+    enemy.velocity.multiplyScalar(0.35);
+    spawnHazardWarning(enemy.attackTarget, wardenHazardRadius, 0.76);
+    return;
+  }
+
+  const chaseSpeed = distance > 12 ? enemy.speed * 0.86 * speedMultiplier : enemy.speed * 0.38;
+  tmpVecB.copy(direction).multiplyScalar(chaseSpeed);
+  enemy.velocity.lerp(tmpVecB, 1 - Math.pow(0.05, delta));
 }
 
 function updateShieldbearerIntent(
@@ -2843,7 +3057,7 @@ function updateEnemyHealthBars() {
 }
 
 function shouldShowEnemyHealthBar(kind: EnemyKind) {
-  return kind === "heavy" || kind === "shieldbearer";
+  return kind === "heavy" || kind === "warden" || kind === "shieldbearer";
 }
 
 function updateBossBar() {
@@ -3012,9 +3226,14 @@ function spawnEnemy(kind: EnemyKind) {
     hitCooldown: 0,
     flashTime: 0,
     dashCharge: 0,
-    dashCooldown: kind === "dasher" ? 1.2 : 0,
+    dashCooldown: kind === "dasher" ? 1.2 : kind === "charger" ? 1.4 + Math.random() * 0.6 : 0,
     attackCharge: 0,
-    attackCooldown: kind === "spitter" ? 1.1 + Math.random() * 0.8 : 0,
+    attackCooldown:
+      kind === "spitter"
+        ? 1.1 + Math.random() * 0.8
+        : kind === "warden"
+          ? 2.2 + Math.random() * 1.2
+          : 0,
     attackTarget: new THREE.Vector3(),
     baseColor: material.color.clone(),
   };
@@ -3030,8 +3249,12 @@ function createEnemyMaterial(kind: EnemyKind) {
       return swarmerMaterial.clone();
     case "dasher":
       return dasherMaterial.clone();
+    case "charger":
+      return chargerMaterial.clone();
     case "spitter":
       return spitterMaterial.clone();
+    case "warden":
+      return wardenMaterial.clone();
     case "shieldbearer":
       return shieldbearerMaterial.clone();
     case "boss":
@@ -3114,7 +3337,7 @@ function getNearestUnblockedPosition(position: THREE.Vector3, radius: number) {
 function createEnemyHealthBar(kind: EnemyKind) {
   const healthBar = document.createElement("div");
   healthBar.className = `enemy-bar ${
-    kind === "boss" ? "boss" : kind === "heavy" || kind === "shieldbearer" ? "elite" : ""
+    kind === "boss" ? "boss" : shouldShowEnemyHealthBar(kind) ? "elite" : ""
   }`;
   const healthFillEl = document.createElement("b");
   healthBar.append(healthFillEl);
@@ -3383,6 +3606,21 @@ function spawnDangerLine(from: THREE.Vector3, to: THREE.Vector3) {
     velocity: new THREE.Vector3(0, 0, 0),
     life: 0.62,
     maxLife: 0.62,
+    gravity: 0,
+  });
+}
+
+function spawnHazardWarning(position: THREE.Vector3, radius: number, duration: number) {
+  const warning = new THREE.Mesh(new THREE.RingGeometry(radius * 0.82, radius, 42), hazardWarningMaterial.clone());
+  warning.position.copy(position);
+  warning.position.y = sampleTerrainHeight(warning.position.x, warning.position.z) + 0.1;
+  alignPlanarMeshToTerrain(warning, warning.position.x, warning.position.z);
+  scene.add(warning);
+  particles.push({
+    mesh: warning,
+    velocity: new THREE.Vector3(0, 0, 0),
+    life: duration,
+    maxLife: duration,
     gravity: 0,
   });
 }
@@ -4332,6 +4570,10 @@ function restart() {
   }
   for (const projectile of hostileProjectiles.splice(0)) {
     scene.remove(projectile.mesh);
+  }
+  for (const hazard of hostileHazards.splice(0)) {
+    scene.remove(hazard.mesh);
+    hazard.mesh.geometry.dispose();
   }
   for (const text of floatingTexts.splice(0)) {
     text.element.remove();

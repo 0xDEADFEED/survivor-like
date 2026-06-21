@@ -109,7 +109,9 @@ export const config = {
     heavy: { hp: 120, speed: 2.2, radius: 1.1, damage: 15, xp: 8, y: 1.05 },
     swarmer: { hp: 12, speed: 5.3, radius: 0.48, damage: 5, xp: 1, y: 0.52 },
     dasher: { hp: 32, speed: 3.4, radius: 0.62, damage: 11, xp: 3, y: 0.66 },
+    charger: { hp: 70, speed: 2.9, radius: 0.82, damage: 18, xp: 6, y: 0.82 },
     spitter: { hp: 42, speed: 2.55, radius: 0.68, damage: 13, xp: 4, y: 0.72 },
+    warden: { hp: 135, speed: 1.8, radius: 1.02, damage: 12, xp: 10, y: 1 },
     shieldbearer: { hp: 155, speed: 1.95, radius: 1.05, damage: 16, xp: 10, y: 1.02 },
     boss: { hp: 520, speed: 1.7, radius: 1.75, damage: 22, xp: 30, y: 1.68 },
   },
@@ -169,7 +171,8 @@ export function getWaveConfig(runTime: number): WaveConfig {
       weights: [
         ["basic", 0.5],
         ["swarmer", 0.23],
-        ["dasher", 0.17],
+        ["dasher", 0.12],
+        ["charger", 0.05],
         ["spitter", 0.1],
       ],
     };
@@ -186,10 +189,12 @@ export function getWaveConfig(runTime: number): WaveConfig {
       weights: [
         ["basic", 0.42],
         ["swarmer", 0.21],
-        ["dasher", 0.15],
+        ["dasher", 0.12],
+        ["charger", 0.07],
         ["spitter", 0.1],
         ["heavy", 0.08],
-        ["shieldbearer", 0.04],
+        ["warden", 0.04],
+        ["shieldbearer", 0.03],
       ],
     };
   }
@@ -200,14 +205,23 @@ export function getWaveConfig(runTime: number): WaveConfig {
     spawnDelay: 0.34,
     batchSize: runTime > 180 ? 4 : 3,
     eliteDelay: 9,
-    eliteKind: Math.random() < 0.35 ? "heavy" : Math.random() < 0.7 ? "dasher" : "shieldbearer",
+    eliteKind:
+      Math.random() < 0.25
+        ? "heavy"
+        : Math.random() < 0.5
+          ? "charger"
+          : Math.random() < 0.76
+            ? "warden"
+            : "shieldbearer",
     weights: [
       ["basic", 0.34],
-      ["swarmer", 0.21],
-      ["dasher", 0.18],
+      ["swarmer", 0.18],
+      ["dasher", 0.13],
+      ["charger", 0.08],
       ["spitter", 0.12],
-      ["heavy", 0.09],
-      ["shieldbearer", 0.06],
+      ["heavy", 0.07],
+      ["warden", 0.05],
+      ["shieldbearer", 0.03],
     ],
   };
 }

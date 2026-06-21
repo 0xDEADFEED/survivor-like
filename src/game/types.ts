@@ -1,6 +1,15 @@
 import type * as THREE from "three";
 
-export type EnemyKind = "basic" | "heavy" | "swarmer" | "dasher" | "spitter" | "shieldbearer" | "boss";
+export type EnemyKind =
+  | "basic"
+  | "heavy"
+  | "swarmer"
+  | "dasher"
+  | "charger"
+  | "spitter"
+  | "warden"
+  | "shieldbearer"
+  | "boss";
 export type GameMode = "start" | "running" | "level-up" | "paused" | "dead";
 export type WeaponId = "mace" | "hammer" | "rock" | "slam" | "boomerang" | "lightning";
 export type CharacterId = "bonker" | "scout" | "bulwark" | "stormcaller";
@@ -70,6 +79,15 @@ export interface HostileProjectile {
   damage: number;
   radius: number;
   life: number;
+  splashRadius: number;
+}
+
+export interface HostileHazard {
+  mesh: THREE.Mesh;
+  radius: number;
+  damagePerSecond: number;
+  life: number;
+  maxLife: number;
 }
 
 export interface Upgrade {
