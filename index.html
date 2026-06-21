@@ -16,26 +16,41 @@
         </div>
       </div>
       <section id="hud" aria-label="Run stats">
-        <div class="hud-row top">
-          <div class="stat">
-            <span class="stat-label">Time</span>
-            <strong id="time">00:00</strong>
-          </div>
-          <div class="stat">
-            <span class="stat-label">Kills</span>
-            <strong id="kills">0</strong>
-          </div>
-          <div class="stat">
-            <span class="stat-label">Level</span>
-            <strong id="level">1</strong>
-          </div>
+        <div class="xp-rail" aria-label="Experience">
+          <span id="xp-fill"></span>
         </div>
-        <div class="bars">
+        <div class="health-panel">
+          <div class="health-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" focusable="false">
+              <path d="M12 21s-7.4-4.7-9.4-9.2C.9 8 3.3 4.5 7 4.5c2 0 3.6 1 5 3 1.4-2 3-3 5-3 3.7 0 6.1 3.5 4.4 7.3C19.4 16.3 12 21 12 21Z" />
+            </svg>
+          </div>
           <div class="bar health" aria-label="Health">
             <span id="health-fill"></span>
           </div>
-          <div class="bar xp" aria-label="Experience">
-            <span id="xp-fill"></span>
+        </div>
+        <div class="hud-row top">
+          <div class="stat" aria-label="Time">
+            <svg class="stat-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <circle cx="12" cy="13" r="8" />
+              <path d="M12 9v5l3 2" />
+              <path d="M9 2h6" />
+            </svg>
+            <strong id="time">00:00</strong>
+          </div>
+          <div class="stat" aria-label="Kills">
+            <svg class="stat-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <path d="M14 3 4 13l4 4L18 7l2-4-4 2-2-2Z" />
+              <path d="m5 19 4-4" />
+              <path d="m3 21 3-3" />
+            </svg>
+            <strong id="kills">0</strong>
+          </div>
+          <div class="stat" aria-label="Level">
+            <svg class="stat-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <path d="m12 3 3 6 6 .9-4.5 4.4 1.1 6.2L12 17.6l-5.6 2.9 1.1-6.2L3 9.9 9 9l3-6Z" />
+            </svg>
+            <strong id="level">1</strong>
           </div>
         </div>
       </section>

@@ -157,48 +157,95 @@ button {
 
 #hud {
   position: fixed;
-  inset: 16px 16px auto;
+  inset: 0;
   pointer-events: none;
   z-index: 2;
 }
 
 .hud-row {
+  position: absolute;
+  top: 16px;
+  left: 50%;
   display: flex;
   gap: 10px;
   align-items: center;
   justify-content: center;
+  transform: translateX(-50%);
 }
 
 .stat {
-  min-width: 86px;
-  padding: 8px 10px;
+  display: grid;
+  grid-template-columns: 22px minmax(44px, auto);
+  gap: 7px;
+  align-items: center;
+  min-width: 82px;
+  height: 44px;
+  padding: 7px 10px;
   border: 1px solid rgba(244, 240, 223, 0.22);
   border-radius: 8px;
   background: rgba(13, 17, 23, 0.68);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
-  text-align: center;
   backdrop-filter: blur(10px);
 }
 
-.stat-label {
+.stat-icon {
   display: block;
-  color: #b9c4c9;
-  font-size: 11px;
-  font-weight: 700;
-  text-transform: uppercase;
+  width: 22px;
+  height: 22px;
+  color: #d7efe9;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.stat:nth-child(2) .stat-icon {
+  color: #f3cf5e;
+}
+
+.stat:nth-child(3) .stat-icon {
+  color: #98e86f;
 }
 
 .stat strong {
   display: block;
-  margin-top: 2px;
+  min-width: 0;
   color: #fff7d5;
-  font-size: 20px;
+  font-size: 19px;
   line-height: 1.1;
+  text-align: right;
 }
 
-.bars {
-  width: min(560px, calc(100vw - 32px));
-  margin: 12px auto 0;
+.health-panel {
+  position: absolute;
+  top: 16px;
+  left: 30px;
+  display: grid;
+  grid-template-columns: 28px 156px;
+  gap: 8px;
+  align-items: center;
+  padding: 8px 10px;
+  border: 1px solid rgba(244, 240, 223, 0.18);
+  border-radius: 8px;
+  background: rgba(13, 17, 23, 0.66);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+  backdrop-filter: blur(10px);
+}
+
+.health-icon {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  color: #ff6860;
+}
+
+.health-icon svg {
+  display: block;
+  width: 22px;
+  height: 22px;
+  fill: currentColor;
 }
 
 .bar {
@@ -211,10 +258,6 @@ button {
   overflow: hidden;
 }
 
-.bar + .bar {
-  margin-top: 7px;
-}
-
 .bar span {
   display: block;
   width: 100%;
@@ -225,11 +268,83 @@ button {
 }
 
 .health span {
-  background: linear-gradient(90deg, #4ed36b, #d7e35a);
+  background: linear-gradient(90deg, #e63d37, #ff7a4f);
 }
 
-.xp span {
-  background: linear-gradient(90deg, #2ebbd4, #7d6bff);
+.xp-rail {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 16px;
+  padding: 2px;
+  border-right: 1px solid rgba(244, 240, 223, 0.18);
+  background: rgba(7, 9, 12, 0.58);
+  overflow: hidden;
+}
+
+.xp-rail span {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(0deg, #2ebbd4, #7d6bff);
+  transform-origin: center bottom;
+  transition: transform 140ms ease;
+}
+
+@media (max-width: 720px) {
+  .hud-row {
+    right: 10px;
+    left: auto;
+    gap: 6px;
+    transform: none;
+  }
+
+  .stat {
+    grid-template-columns: 18px minmax(24px, auto);
+    gap: 5px;
+    min-width: 52px;
+    height: 36px;
+    padding: 6px;
+  }
+
+  .stat:first-child {
+    min-width: 72px;
+  }
+
+  .stat-icon {
+    width: 18px;
+    height: 18px;
+  }
+
+  .stat strong {
+    font-size: 16px;
+  }
+
+  .health-panel {
+    left: 22px;
+    grid-template-columns: 22px 112px;
+    gap: 6px;
+    padding: 7px 8px;
+  }
+
+  .health-icon,
+  .health-icon svg {
+    width: 20px;
+    height: 20px;
+  }
+
+  .xp-rail {
+    width: 12px;
+    padding: 2px 1px;
+  }
+}
+
+@media (max-width: 480px) {
+  .health-panel {
+    top: 68px;
+  }
 }
 
 .overlay {
@@ -581,7 +696,12 @@ h1 {
 
 @media (max-width: 680px) {
   #hud {
-    inset: 10px 10px auto;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
   }
 
   .hud-row {
@@ -589,12 +709,16 @@ h1 {
   }
 
   .stat {
-    min-width: 74px;
-    padding: 7px 8px;
+    min-width: 52px;
+    padding: 6px;
+  }
+
+  .stat:first-child {
+    min-width: 72px;
   }
 
   .stat strong {
-    font-size: 17px;
+    font-size: 16px;
   }
 
   .upgrade-grid {

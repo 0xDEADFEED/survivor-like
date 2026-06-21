@@ -3905,7 +3905,7 @@ function updateHud() {
   killsEl.textContent = String(kills);
   levelEl.textContent = String(player.level);
   healthFill.style.transform = `scaleX(${THREE.MathUtils.clamp(player.health / player.maxHealth, 0, 1)})`;
-  xpFill.style.transform = `scaleX(${THREE.MathUtils.clamp(player.xp / player.xpToNext, 0, 1)})`;
+  xpFill.style.transform = `scaleY(${THREE.MathUtils.clamp(player.xp / player.xpToNext, 0, 1)})`;
 }
 
 function showToast(message: string, duration = 2.2) {
