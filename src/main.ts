@@ -277,6 +277,7 @@ let playerLedgeImpactCooldown = 0;
 let combatOverlayTimer = 0;
 let hudTimer = 0;
 let lastFrame = 0;
+let restorePointerLockAfterLevelUp = false;
 
 const tmpVec = new THREE.Vector3();
 const tmpVecB = new THREE.Vector3();
@@ -1717,11 +1718,11 @@ function bindEvents() {
     requestCameraPointerLock();
   });
 
-  window.addEventListener("blur", releaseCameraPointerLock);
-  window.addEventListener("pagehide", releaseCameraPointerLock);
+  window.addEventListener("blur", handlePageInactive);
+  window.addEventListener("pagehide", handlePageInactive);
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState !== "visible") {
-      releaseCameraPointerLock();
+      handlePageInactive();
     }
   });
 
@@ -1768,6 +1769,17 @@ function releaseCameraPointerLock() {
       // Some browsers can reject unlock while already transitioning.
     }
   }
+}
+
+function handlePageInactive() {
+  restorePointerLockAfterLevelUp = false;
+  releaseCameraPointerLock();
+}
+
+function restoreLevelUpPointerLock() {
+  if (!restorePointerLockAfterLevelUp) return;
+  restorePointerLockAfterLevelUp = false;
+  requestCameraPointerLock();
 }
 
 function loop(now: number) {
@@ -3464,6 +3476,7 @@ function gainXp(amount: number) {
 }
 
 function showLevelUp(title = "Pick a power") {
+  restorePointerLockAfterLevelUp = document.pointerLockElement === canvas;
   gameMode = "level-up";
   releaseCameraPointerLock();
   levelUpOverlay.classList.remove("hidden");
@@ -3499,6 +3512,7 @@ function chooseUpgrade(upgrade: Upgrade) {
   levelUpOverlay.classList.add("hidden");
   gameMode = "running";
   updateHud();
+  restoreLevelUpPointerLock();
 }
 
 function rerollLevelUpChoices() {
@@ -3516,6 +3530,7 @@ function skipLevelUpChoice() {
   gameMode = "running";
   showToast("+5 Coins");
   updateHud();
+  restoreLevelUpPointerLock();
 }
 
 function pickUpgrades(count: number) {
