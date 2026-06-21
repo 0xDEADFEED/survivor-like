@@ -281,6 +281,7 @@ let restorePointerLockAfterLevelUp = false;
 
 const tmpVec = new THREE.Vector3();
 const tmpVecB = new THREE.Vector3();
+const tmpVecC = new THREE.Vector3();
 const cameraPlanarOffset = new THREE.Vector3(0, 0, 19);
 const cameraDesiredOffset = new THREE.Vector3();
 const cameraDesiredPosition = new THREE.Vector3();
@@ -336,6 +337,13 @@ const enemySpawnRingMaxDistance = 39;
 const bossSpawnRingMinDistance = 38;
 const bossSpawnRingMaxDistance = 50;
 const enemySpawnWorldLimit = 70;
+const enemyCatchUpStartDistance = 18;
+const enemyCatchUpFullDistance = 42;
+const enemyMaxCatchUpMultiplier = 1.46;
+const enemyFlankStartDistance = 7;
+const enemyFlankFullDistance = 24;
+const playerForwardSpawnChance = 0.58;
+const playerSideSpawnChance = 0.24;
 const maxLiveParticles = 180;
 const maxFloatingTexts = 70;
 
@@ -2490,15 +2498,17 @@ function updateEnemies(delta: number) {
     toPlayer.y = 0;
     const playerDistance = Math.max(toPlayer.length(), 0.0001);
     const direction = toPlayer.divideScalar(playerDistance);
+    const pressureDirection = getEnemyPressureDirection(enemy, direction, playerDistance);
+    const speedMultiplier = getEnemyPressureSpeedMultiplier(enemy, direction, playerDistance);
 
     if (enemy.kind === "dasher") {
-      updateDasherIntent(enemy, direction, playerDistance, delta);
+      updateDasherIntent(enemy, pressureDirection, playerDistance, delta, speedMultiplier);
     } else if (enemy.kind === "spitter") {
-      updateSpitterIntent(enemy, direction, playerDistance, delta);
+      updateSpitterIntent(enemy, pressureDirection, playerDistance, delta, speedMultiplier);
     } else if (enemy.kind === "shieldbearer") {
-      updateShieldbearerIntent(enemy, direction, playerDistance, delta);
+      updateShieldbearerIntent(enemy, pressureDirection, playerDistance, delta, speedMultiplier);
     } else {
-      tmpVecB.copy(direction).multiplyScalar(enemy.speed);
+      tmpVecB.copy(pressureDirection).multiplyScalar(enemy.speed * speedMultiplier);
       enemy.velocity.lerp(tmpVecB, 1 - Math.pow(0.03, delta));
     }
     slowEnemyForTerrainClimb(enemy);
@@ -2532,6 +2542,44 @@ function updateEnemies(delta: number) {
       killEnemy(i);
     }
   }
+}
+
+function getEnemyPressureDirection(enemy: Enemy, directDirection: THREE.Vector3, distance: number) {
+  tmpVecC.copy(directDirection);
+  if (distance <= enemyFlankStartDistance) return tmpVecC;
+
+  const flankT = THREE.MathUtils.clamp(
+    (distance - enemyFlankStartDistance) / (enemyFlankFullDistance - enemyFlankStartDistance),
+    0,
+    1,
+  );
+  const side = Math.sin(enemy.mesh.id * 12.9898) >= 0 ? 1 : -1;
+  const kindWeight = enemy.kind === "swarmer" || enemy.kind === "dasher" ? 0.24 : 0.17;
+  const flankWeight = kindWeight * flankT;
+  tmpVecC.set(
+    directDirection.x - directDirection.z * side * flankWeight,
+    0,
+    directDirection.z + directDirection.x * side * flankWeight,
+  );
+  return tmpVecC.normalize();
+}
+
+function getEnemyPressureSpeedMultiplier(enemy: Enemy, directDirection: THREE.Vector3, distance: number) {
+  if (distance <= enemyCatchUpStartDistance) return 1;
+
+  const catchUpT = THREE.MathUtils.clamp(
+    (distance - enemyCatchUpStartDistance) / (enemyCatchUpFullDistance - enemyCatchUpStartDistance),
+    0,
+    1,
+  );
+  const runTimeT = THREE.MathUtils.clamp(runTime / 150, 0, 1);
+  const kindLimit = enemy.kind === "boss" || enemy.kind === "shieldbearer" ? 1.24 : enemyMaxCatchUpMultiplier;
+  const maxMultiplier = THREE.MathUtils.lerp(1.22, kindLimit, runTimeT);
+  const runningAway =
+    player.velocity.lengthSq() > 4 &&
+    player.velocity.x * directDirection.x + player.velocity.z * directDirection.z > player.speed * 0.42;
+  const pressureBonus = runningAway ? 0.1 * catchUpT : 0;
+  return Math.min(maxMultiplier, THREE.MathUtils.lerp(1, maxMultiplier, catchUpT) + pressureBonus);
 }
 
 function slowEnemyForTerrainClimb(enemy: Enemy) {
@@ -2575,6 +2623,7 @@ function updateDasherIntent(
   direction: THREE.Vector3,
   distance: number,
   delta: number,
+  speedMultiplier: number,
 ) {
   enemy.dashCooldown -= delta;
 
@@ -2584,7 +2633,7 @@ function updateDasherIntent(
     enemy.mesh.scale.setScalar(1 + Math.sin(runTime * 30) * 0.08);
 
     if (enemy.dashCharge <= 0) {
-      enemy.velocity.copy(direction).multiplyScalar(enemy.speed * 3.2);
+      enemy.velocity.copy(direction).multiplyScalar(enemy.speed * 3.2 * speedMultiplier);
       enemy.dashCooldown = 2.2;
       enemy.mesh.scale.setScalar(1);
     }
@@ -2598,7 +2647,7 @@ function updateDasherIntent(
     return;
   }
 
-  tmpVecB.copy(direction).multiplyScalar(enemy.speed);
+  tmpVecB.copy(direction).multiplyScalar(enemy.speed * speedMultiplier);
   enemy.velocity.lerp(tmpVecB, 1 - Math.pow(0.04, delta));
 }
 
@@ -2607,6 +2656,7 @@ function updateSpitterIntent(
   direction: THREE.Vector3,
   distance: number,
   delta: number,
+  speedMultiplier: number,
 ) {
   enemy.attackCooldown -= delta;
 
@@ -2640,7 +2690,7 @@ function updateSpitterIntent(
     return;
   }
 
-  tmpVecB.copy(direction).multiplyScalar(enemy.speed * 0.92);
+  tmpVecB.copy(direction).multiplyScalar(enemy.speed * 0.92 * speedMultiplier);
   enemy.velocity.lerp(tmpVecB, 1 - Math.pow(0.035, delta));
 }
 
@@ -2649,8 +2699,9 @@ function updateShieldbearerIntent(
   direction: THREE.Vector3,
   distance: number,
   delta: number,
+  speedMultiplier: number,
 ) {
-  const speed = distance < 5 ? enemy.speed * 1.25 : enemy.speed;
+  const speed = (distance < 5 ? enemy.speed * 1.25 : enemy.speed) * speedMultiplier;
   tmpVecB.copy(direction).multiplyScalar(speed);
   enemy.velocity.lerp(tmpVecB, 1 - Math.pow(0.045, delta));
   enemy.mesh.scale.set(1.05, 1, 1.05);
@@ -2996,7 +3047,7 @@ function getEnemySpawnPosition(kind: EnemyKind) {
   const maxDistance = kind === "boss" ? bossSpawnRingMaxDistance : enemySpawnRingMaxDistance;
 
   for (let attempt = 0; attempt < 18; attempt += 1) {
-    const angle = Math.random() * Math.PI * 2;
+    const angle = getEnemySpawnAngle();
     const distance = THREE.MathUtils.lerp(minDistance, maxDistance, Math.random());
     const candidate = new THREE.Vector3(
       player.group.position.x + Math.cos(angle) * distance,
@@ -3017,6 +3068,23 @@ function getEnemySpawnPosition(kind: EnemyKind) {
   );
   clampSpawnPositionToWorld(fallback, enemyRadius);
   return getNearestUnblockedPosition(fallback, enemyRadius);
+}
+
+function getEnemySpawnAngle() {
+  if (player.velocity.lengthSq() <= 2.25) {
+    return Math.random() * Math.PI * 2;
+  }
+
+  const travelAngle = Math.atan2(player.velocity.z, player.velocity.x);
+  const roll = Math.random();
+  if (roll < playerForwardSpawnChance) {
+    return travelAngle + (Math.random() - 0.5) * 1.75;
+  }
+  if (roll < playerForwardSpawnChance + playerSideSpawnChance) {
+    const side = Math.random() < 0.5 ? -1 : 1;
+    return travelAngle + side * (Math.PI * 0.5 + (Math.random() - 0.5) * 0.8);
+  }
+  return Math.random() * Math.PI * 2;
 }
 
 function isSpawnPositionInWorld(position: THREE.Vector3, radius: number) {
